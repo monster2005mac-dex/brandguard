@@ -100,9 +100,10 @@ BG.shell={
     ctxOpts=opts;
     return BG.store.init().then(function(user){
       if(!user){location.replace('login.html');return;}
+      var workspaceHome=user.role==='Admin'?'rules.html':user.role==='Reviewer'?'workflow.html':'workflow.html';
       document.body.innerHTML=
         '<div class="app">'+
-          '<aside class="rail"><a class="logo" href="index.html">'+svg('shield')+'BrandGuard</a><nav class="navlist" id="navlist" aria-label="Primary navigation"></nav><div class="usercard" id="usercard"></div></aside>'+
+          '<aside class="rail"><a class="logo" href="'+workspaceHome+'">'+svg('shield')+'BrandGuard</a><div class="workspace-label"><span>Workspace</span><b>'+esc(user.role||'Account')+'</b></div><nav class="navlist" id="navlist" aria-label="Primary navigation"></nav><div class="usercard" id="usercard"></div></aside>'+
           '<div class="main">'+
             '<header class="topbar"><div><h1>'+esc(opts.title)+'</h1><div class="sub">'+esc(opts.sub||'')+'</div></div>'+
               '<div class="right"><span id="mobileUser" class="mobile-user"></span><button class="top-profile" type="button" data-ui="profile">'+(user.photo?'<img class="top-profile-avatar" src="'+esc(user.photo)+'" alt="">':'<span class="top-profile-avatar">'+esc((user.name||'?').charAt(0).toUpperCase())+'</span>')+'<span><b>'+esc(user.name||'User')+'</b><small>'+esc(user.role||'')+'</small></span></button><span id="modeBadge" class="badge-mode"></span><span id="topActions"></span></div></header>'+
