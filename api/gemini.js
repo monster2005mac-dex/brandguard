@@ -11,13 +11,20 @@ function initializeFirebase() {
   if (!serviceAccount) {
     throw new Error('FIREBASE_SERVICE_ACCOUNT_JSON is not configured');
   }
+  let parsed;
+  try {
+    parsed = JSON.parse(serviceAccount);
+  } catch (error) {
+    throw new Error('FIREBASE_SERVICE_ACCOUNT_JSON must contain valid JSON');
+  }
   initializeApp({
-    credential: cert(JSON.parse(serviceAccount))
+    credential: cert(parsed),
+    projectId: parsed.project_id
   });
 }
 
 module.exports = async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Origin', process.env.APP_ORIGIN || '*');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
 
