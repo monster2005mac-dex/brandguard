@@ -19,7 +19,9 @@ service cloud.firestore {
       allow update: if signedIn() && request.auth.uid == uid
         && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['role'])
           || (request.auth.token.email == 'admin@brandco.in'
-            && request.resource.data.role == 'Admin'));
+            && request.resource.data.role == 'Admin')
+          || (resource.data.role == 'Admin'
+            && request.resource.data.role in ['Creator', 'Reviewer']));
     }
 
     // Brand rules: anyone signed in can read. Only an Admin can change them.

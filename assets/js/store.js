@@ -61,9 +61,20 @@ function initFirebase(){
     .then(function(){
       window.firebase.initializeApp(fbc);
       auth=window.firebase.auth();db=window.firebase.firestore();fbReady=true;
-      return new Promise(function(res){var un=auth.onAuthStateChanged(function(u){un();res(u);});});
+      return new Promise(function(res){
+        var initial=true;
+        auth.onAuthStateChanged(function(u){
+          if(initial){
+            initial=false;
+            if(u){attach(u).then(function(){res(u);}).catch(function(e){console.error(e);res(null);});}
+            else res(null);
+            return;
+          }
+          if(u){attach(u).catch(function(e){console.error(e);});}
+          else {S.user=null;emit();}
+        });
+      });
     })
-    .then(function(u){return u?attach(u):null;})
     .catch(function(e){
       console.error(e);
       S.mode='local';S.note='Firebase could not start ('+(e&&e.message||e)+'). Running in local demo mode.';
@@ -80,15 +91,15 @@ function attach(u){
     var name=(d&&d.name)||u.displayName||(u.email||'').split('@')[0]||'User';
     S.user={uid:u.uid,name:name,email:u.email||'',role:role,photo:u.photoURL||''};
     return (!d||d.role!==role)?uref.set({name:name,email:u.email||'',role:role,createdAt:(d&&d.createdAt)||new Date().toISOString()},{merge:true}):null;
-  }).then(bootstrap).then(listen).then(function(){return S.user;});
+  }).then(function(){return bootstrap(u.uid);}).then(listen).then(function(){return S.user;});
 }
-function bootstrap(){
+function bootstrap(uid){
   var ref=db.collection('brand').doc('rules');
   return ref.get().then(function(s){
     if(s.exists)return null;
     var seed=E.seedAll(),b=db.batch();
     b.set(ref,clean(seed.rules));
-    seed.docs.forEach(function(d){b.set(db.collection('docs').doc(d.id),clean(d));});
+    seed.docs.forEach(function(d){d.owner=uid;d.sample=true;b.set(db.collection('docs').doc(d.id),clean(d));});
     seed.events.forEach(function(e,i){b.set(db.collection('events').doc('seed-'+i),clean(e));});
     return b.commit();
   });
@@ -125,6 +136,7 @@ S.saveRules=function(r){
   persistLocal();return Promise.resolve();
 };
 S.saveDoc=function(d){
+  if(S.mode==='firebase'&&S.user)d.owner=d.owner||S.user.uid;
   var i=shared.docs.findIndex(function(x){return x.id===d.id;});
   if(i>=0)shared.docs[i]=d;else shared.docs.push(d);
   emit();
