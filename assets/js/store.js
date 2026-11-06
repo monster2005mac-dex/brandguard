@@ -219,9 +219,10 @@ S.google=function(){
 };
 S.signOut=function(){
   try{localStorage.removeItem(HINT);}catch(e){}
+  S.user=null;
   if(S.mode==='firebase'&&auth)return auth.signOut();
   try{localStorage.removeItem(LS_USER);}catch(e){}
-  S.user=null;return Promise.resolve();
+  return Promise.resolve();
 };
 S.resetPassword=function(email){
   if(S.mode!=='firebase'||!auth)return Promise.reject({message:'Password reset needs Firebase sign-in.'});

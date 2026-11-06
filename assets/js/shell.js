@@ -151,7 +151,11 @@ BG.shell={
           var a=el.dataset.ui;
           if(a==='close')UI.closeDrawer();
           if(a==='theme')toggleTheme();
-          if(a==='signout')BG.store.signOut().then(function(){location.href='index.html';});
+          if(a==='signout'){
+            var signOutPromise=BG.store.signOut();
+            if(signOutPromise&&signOutPromise.catch)signOutPromise.catch(function(e){console.error(e);});
+            location.replace('index.html');
+          }
           if(a==='resetPhoto')BG.store.setPhoto('').then(function(){UI.drawer(profileHTML(BG.store.user));UI.toast('Photo reset.');});
           if(a==='closeModal')UI.closeModal();
           if(a==='profile'){
