@@ -31,7 +31,15 @@
 (function(){
   var S=BG.store,box=document.getElementById('box'),esc=BG.engine.esc;
   var ROLES=[['Creator','Writes content, resolves findings, submits for approval.'],['Reviewer','Approves or requests changes. Cannot edit drafts.'],['Admin','Edits brand rules, facts and claims. Full access.']];
-  function go(){location.href='review.html';}
+  function go(){
+    setTimeout(function(){
+      var role=S.user&&S.user.role;
+      var email=(S.user&&S.user.email||document.getElementById('em')&&document.getElementById('em').value||'').toLowerCase();
+      if(role==='Admin'||email==='admin@brandco.in'){location.replace('rules.html');return;}
+      if(role==='Reviewer'){location.replace('workflow.html');return;}
+      location.replace('workflow.html');
+    },300);
+  }
   function demo(){
     box.innerHTML='<h1 style="font-size:30px;margin-bottom:6px">Open the demo workspace</h1>'+
       '<p class="muted" style="margin-bottom:20px">Pick a role. You can switch role at any time from the sidebar.</p>'+
@@ -85,7 +93,7 @@
       (e&&e.message)||'Something went wrong. Try again.';
   }
   S.init().then(function(user){
-    if(user)return go();
+    if(user){go();return;}
     if(S.mode==='firebase')live();else demo();
   });
 })();
