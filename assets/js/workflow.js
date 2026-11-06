@@ -10,7 +10,7 @@ function addAudit(d,who,what){d.audit.push({at:new Date().toISOString(),who:who,
 function latest(d){return d.versions[d.versions.length-1];}
 
 function board(){
-  var docs=S.docs.slice().reverse();
+  var docs=S.visibleDocs().slice().reverse();
   return '<div class="kanban">'+COLS.map(function(c){
     var items=docs.filter(function(d){return d.status===c[0];});
     return '<section class="col" aria-label="'+c[0]+'"><h3>'+UI.statusPill(c[0])+'<span class="n">'+items.length+'</span></h3><p class="small muted" style="margin:-6px 4px 12px">'+c[1]+'</p>'+
@@ -54,9 +54,9 @@ function detail(d){
 function render(){
   var y=window.scrollY;
   $('page').innerHTML=board();window.scrollTo(0,y);
-  if(sel&&document.getElementById('drawer').classList.contains('on')){var d=S.docs.find(function(x){return x.id===sel;});if(d){var keep=($('commentBox')||{}).value;UI.drawer(detail(d));if(keep&&$('commentBox'))$('commentBox').value=keep;}}
+  if(sel&&document.getElementById('drawer').classList.contains('on')){var d=S.visibleDocs().find(function(x){return x.id===sel;});if(d){var keep=($('commentBox')||{}).value;UI.drawer(detail(d));if(keep&&$('commentBox'))$('commentBox').value=keep;}}
 }
-function find(id){return S.docs.find(function(x){return x.id===id;});}
+function find(id){return S.visibleDocs().find(function(x){return x.id===id;});}
 
 document.addEventListener('click',function(ev){
   var el=ev.target.closest('[data-act]');if(!el)return;

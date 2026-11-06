@@ -62,7 +62,7 @@ BG.session={
 /* ---------- shell ---------- */
 function userCard(u){
   var initial=esc((u.name||'?').charAt(0).toUpperCase());
-  return '<div class="who"><div class="avatar">'+initial+'</div><div><b>'+esc(u.name||'User')+'</b><span class="small muted">'+esc(u.email||'Signed in')+'</span><span class="sidebar-role">'+esc(u.role||'')+'</span></div></div>'+
+  return '<button class="who profile-link" data-ui="profile" type="button">'+(u.photo?'<img class="avatar avatar-photo" src="'+esc(u.photo)+'" alt="">':'<div class="avatar">'+initial+'</div>')+'<div><b>'+esc(u.name||'User')+'</b><span class="small muted">'+esc(u.email||'Signed in')+'</span><span class="sidebar-role">'+esc(u.role||'')+'</span></div><span class="profile-arrow">›</span></button>'+
     '<div class="field"><label for="roleSel">Acting as</label>'+(
       BG.store.mode==='firebase'
         ?'<div class="current-role">'+esc(u.role)+'</div>'
@@ -71,7 +71,7 @@ function userCard(u){
     '<div class="row"><button class="btn sm ghost" data-ui="theme">Theme</button><button class="btn sm ghost" data-ui="signout">Sign out</button></div>';
 }
 function buildNav(page){
-  var inReview=BG.store.docs.filter(function(d){return d.status==='In review';}).length;
+  var inReview=BG.store.visibleDocs().filter(function(d){return d.status==='In review';}).length;
   return NAV.map(function(n){
     return '<a class="navitem" href="'+n[2]+'"'+(n[0]===page?' aria-current="page"':'')+'>'+svg(n[0])+'<span>'+n[1]+'</span>'+(n[0]==='workflow'&&inReview?'<span class="count">'+inReview+'</span>':'')+'</a>';
   }).join('');
@@ -103,7 +103,7 @@ BG.shell={
           '<aside class="rail"><a class="logo" href="index.html">'+svg('shield')+'BrandGuard</a><nav class="navlist" id="navlist" aria-label="App"></nav><div class="usercard" id="usercard"></div></aside>'+
           '<div class="main">'+
             '<header class="topbar"><div><h1>'+esc(opts.title)+'</h1><div class="sub">'+esc(opts.sub||'')+'</div></div>'+
-              '<div class="right"><span id="mobileUser" class="mobile-user"></span><span class="top-profile"><span class="top-profile-avatar">'+esc((user.name||'?').charAt(0).toUpperCase())+'</span><span><b>'+esc(user.name||'User')+'</b><small>'+esc(user.role||'')+'</small></span></span><span id="modeBadge" class="badge-mode"></span><span id="topActions"></span></div></header>'+
+              '<div class="right"><span id="mobileUser" class="mobile-user"></span><button class="top-profile" type="button" data-ui="profile">'+(user.photo?'<img class="top-profile-avatar" src="'+esc(user.photo)+'" alt="">':'<span class="top-profile-avatar">'+esc((user.name||'?').charAt(0).toUpperCase())+'</span>')+'<span><b>'+esc(user.name||'User')+'</b><small>'+esc(user.role||'')+'</small></span></button><span id="modeBadge" class="badge-mode"></span><span id="topActions"></span></div></header>'+
             '<div id="note" class="banner" hidden></div>'+
             '<div class="content" id="page"></div>'+
             '<footer class="appfoot"><div><b>AI use disclosure.</b> Rule checks run in your browser. The optional Gemini deep check sends the draft and the rule list to Google. Gemini never edits or approves anything: a person accepts, edits or disputes every finding.</div>'+
@@ -122,6 +122,10 @@ BG.shell={
           if(a==='theme')toggleTheme();
           if(a==='signout')BG.store.signOut().then(function(){location.href='login.html';});
           if(a==='closeModal')UI.closeModal();
+          if(a==='profile'){
+            var u=BG.store.user;
+            UI.drawer('<div class="profile-panel"><div class="profile-heading">'+(u.photo?'<img class="profile-large" src="'+esc(u.photo)+'" alt="">':'<div class="avatar profile-large">'+esc((u.name||'?').charAt(0).toUpperCase())+'</div>')+'<div><span class="eyebrow">Signed-in account</span><h2>'+esc(u.name||'User')+'</h2><p class="muted">'+esc(u.email||'')+'</p></div></div><div class="profile-grid"><div><span>Role</span><b>'+esc(u.role||'')+'</b></div><div><span>Workspace</span><b>BrandGuard</b></div></div><button class="btn" data-ui="theme">Change theme</button><button class="btn danger" data-ui="signout">Sign out</button></div>');
+          }
           return;
         }
         if(e.target.id==='scrim'){UI.closeDrawer();}

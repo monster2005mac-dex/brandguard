@@ -28,6 +28,12 @@ Object.defineProperties(S,{
   events:{get:function(){return shared.events;}}
 });
 S.subscribe=function(fn){subs.push(fn);};
+S.visibleDocs=function(){
+  if(!S.user)return [];
+  var role=S.user.role;
+  if(role==='Reviewer'||role==='Admin')return shared.docs.slice();
+  return shared.docs.filter(function(d){return d.owner===S.user.uid;});
+};
 
 /* ---------- local backend ---------- */
 function initLocal(){
@@ -72,7 +78,7 @@ function attach(u){
     var isAdmin=(u.email||'').toLowerCase()===ADMIN_EMAIL;
     var role=isAdmin?'Admin':(d&&d.role==='Admin'?((pending==='Creator'||pending==='Reviewer')?pending:'Creator'):(d&&d.role)||pending||'Creator');
     var name=(d&&d.name)||u.displayName||(u.email||'').split('@')[0]||'User';
-    S.user={uid:u.uid,name:name,email:u.email||'',role:role};
+    S.user={uid:u.uid,name:name,email:u.email||'',role:role,photo:u.photoURL||''};
     return (!d||d.role!==role)?uref.set({name:name,email:u.email||'',role:role,createdAt:(d&&d.createdAt)||new Date().toISOString()},{merge:true}):null;
   }).then(bootstrap).then(listen).then(function(){return S.user;});
 }
@@ -140,7 +146,7 @@ S.resetDemo=function(){
 
 /* ---------- auth ---------- */
 S.enterLocal=function(name,role){
-  S.user={uid:'local',name:name||role,email:'',role:role};writeLS(LS_USER,S.user);return Promise.resolve(S.user);
+  S.user={uid:'local',name:name||role,email:'',role:role,photo:''};writeLS(LS_USER,S.user);return Promise.resolve(S.user);
 };
 S.setRole=function(role){
   if(!S.user)return Promise.resolve();

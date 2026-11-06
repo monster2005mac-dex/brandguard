@@ -32,7 +32,7 @@ function sumry(){
   return {open:open,high:open.filter(function(x){return x.severity==='high';}),med:open.filter(function(x){return x.severity==='medium';}),low:open.filter(function(x){return x.severity==='low';}),
     disputed:f.filter(function(x){return x.status==='disputed';})};
 }
-function currentDoc(){return ss.docId?S.docs.find(function(d){return d.id===ss.docId;}):null;}
+function currentDoc(){return ss.docId?S.visibleDocs().find(function(d){return d.id===ss.docId;}):null;}
 
 /* ---------- views ---------- */
 function markedHtml(){
@@ -246,7 +246,7 @@ sh.start({
   onReady:function(){
     ss=BG.session.load();
     var pend=null;try{pend=sessionStorage.getItem('bg.openDoc');sessionStorage.removeItem('bg.openDoc');}catch(e){}
-    if(pend){var d=S.docs.find(function(x){return x.id===pend;});if(d){var v=d.versions[d.versions.length-1];ss={docId:d.id,title:d.title,type:d.type,intent:d.intent||'',text:v.text,ai:[],disputed:{},resolved:[],aiMeta:null};}}
+    if(pend){var d=S.visibleDocs().find(function(x){return x.id===pend;});if(d){var v=d.versions[d.versions.length-1];ss={docId:d.id,title:d.title,type:d.type,intent:d.intent||'',text:v.text,ai:[],disputed:{},resolved:[],aiMeta:null};}}
     recompute();render();
   },
   onData:function(){if(ss&&!U.timer&&!document.activeElement.matches('#draft,#title,#editBox,#reasonBox')){recompute();render();}},

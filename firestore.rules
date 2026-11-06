@@ -36,11 +36,14 @@ service cloud.firestore {
     // Documents: any signed-in user can create and read.
     // Only Reviewer or Admin can move a document to Approved or Changes requested.
     match /docs/{docId} {
-      allow read: if signedIn();
-      allow create: if signedIn();
+      allow read: if signedIn() && (
+        resource.data.owner == request.auth.uid || isReviewer()
+      );
+      allow create: if signedIn()
+        && request.resource.data.owner == request.auth.uid;
       allow update: if signedIn() && (
-        request.resource.data.status in ['Draft', 'In review']
-        || request.resource.data.status == resource.data.status
+        (resource.data.owner == request.auth.uid
+          && request.resource.data.owner == resource.data.owner)
         || isReviewer()
       ) && resource.data.status != 'Approved';
       allow delete: if false;
