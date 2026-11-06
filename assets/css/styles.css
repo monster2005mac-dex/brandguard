@@ -2,16 +2,16 @@
    Idea: a "seal of approval" identity. Deep seal-green on cool mint paper, ink text,
    mono-set rule IDs as citation stamps. Light and dark share the same tokens. */
 :root{
-  --bg:#F4F7F6; --surface:#FFFFFF; --surface2:#ECF2F0; --ink:#0D1F1A; --muted:#566B64; --line:#DAE4E0;
-  --brand:#0A7A65; --brand-ink:#FFFFFF; --brand-soft:#DCF1EA; --brand-deep:#064A3E;
+  --bg:#FAF7F1; --surface:#FFFDF8; --surface2:#F2EFE7; --ink:#332C24; --muted:#7E6E59; --line:#DED5C8;
+  --brand:#748B58; --brand-ink:#FFFFFF; --brand-soft:#E5ECD9; --brand-deep:#537A69;
   --hi:#B42318; --hi-bg:#FDECEA; --med:#9A5A06; --med-bg:#FEF2D6; --lo:#2B5FA6; --lo-bg:#E6EEFA;
   --ok:#14794B; --ok-bg:#DFF3E8; --ins:#D8F2E1; --del:#FADFDB;
   --shadow:0 1px 2px rgba(13,31,26,.05),0 8px 24px -12px rgba(13,31,26,.18);
   --shadow-lg:0 2px 4px rgba(13,31,26,.06),0 24px 48px -20px rgba(13,31,26,.28);
   --glow:rgba(10,122,101,.16);
   --r:14px;
-  --f-display:"Bricolage Grotesque","Segoe UI",system-ui,sans-serif;
-  --f-body:"Instrument Sans","Segoe UI",system-ui,sans-serif;
+  --f-display:"Cormorant Garamond",Georgia,serif;
+  --f-body:"Plus Jakarta Sans","Segoe UI",system-ui,sans-serif;
   --f-mono:"JetBrains Mono",ui-monospace,Menlo,Consolas,monospace;
 }
 @media (prefers-color-scheme: dark){
@@ -322,3 +322,28 @@ ins{background:var(--ins);text-decoration:none;border-radius:3px;padding:0 2px}
 .toast-wrap{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);display:grid;gap:8px;z-index:80;width:min(440px,calc(100% - 32px))}
 .toast{background:var(--ink);color:var(--bg);padding:11px 16px;border-radius:12px;box-shadow:var(--shadow-lg);font-size:14px;animation:rise .25s ease forwards;opacity:0}
 @media (max-width:900px){.toast-wrap{bottom:calc(84px + env(safe-area-inset-bottom,0px))}}
+
+/* Reference-inspired warm, organic interface */
+body{background-image:
+  radial-gradient(circle at 92% 8%, rgba(176,126,76,.08), transparent 26rem),
+  radial-gradient(circle at -8% 36%, rgba(116,139,88,.10), transparent 30rem)}
+.nav{background:color-mix(in srgb,var(--surface) 88%,transparent)}
+.btn{border-radius:999px}
+.btn.lg{border-radius:999px}
+.card,.panel,.kpi,.fcard,.arch .node,.demo{border-radius:20px}
+.card,.panel,.kpi,.fcard,.demo{box-shadow:0 1px 2px rgba(51,44,36,.04),0 18px 40px -28px rgba(51,44,36,.22)}
+.card:hover{transform:translateY(-3px);box-shadow:0 18px 34px -24px rgba(51,44,36,.28)}
+.hero::before{opacity:.38}
+.hero h1 em{color:var(--brand-deep)}
+.hero h1 em::after{background:var(--brand-deep);opacity:.18}
+.eyebrow,.sec{letter-spacing:.18em;color:var(--brand-deep)}
+.rail{background:color-mix(in srgb,var(--surface) 96%,var(--surface2));border-right-color:var(--line)}
+.rail .brand{font-family:var(--f-display);font-size:21px}
+.rail nav a,.rail nav button{border-radius:12px}
+.rail nav a.active{background:var(--brand-soft);color:var(--brand-deep)}
+.topbar{background:color-mix(in srgb,var(--surface) 92%,transparent);backdrop-filter:blur(14px)}
+input[type=text],input[type=email],input[type=password],input[type=date],select,textarea{border-radius:12px;background:color-mix(in srgb,var(--surface) 92%,white)}
+.pill,.chip{border-radius:999px}
+.auth .side{background:
+  linear-gradient(145deg,rgba(116,139,88,.92),rgba(83,122,105,.96)),
+  radial-gradient(circle at 30% 20%,rgba(255,255,255,.22),transparent 18rem)}
