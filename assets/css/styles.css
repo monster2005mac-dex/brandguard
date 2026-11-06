@@ -194,6 +194,7 @@ textarea{resize:vertical;line-height:1.6}
 .top-profile small,.top-user small{color:var(--muted);font-size:11px;margin-top:3px}
 .top-user{display:grid;text-align:right;line-height:1.1;font-size:13px;font-weight:600}
 .current-role{border:1px solid var(--line);border-radius:9px;padding:8px 10px;font-weight:600;background:var(--surface)}
+.sidebar-role{display:inline-block;margin-top:4px;color:var(--brand);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em}
 .content{padding:16px 32px 32px;flex:1}
 .appfoot{padding:16px 32px 28px;color:var(--muted);font-size:12.5px;border-top:1px solid var(--line);display:grid;gap:3px}
 @media (max-width:900px){

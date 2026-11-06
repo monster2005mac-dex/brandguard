@@ -62,7 +62,7 @@ BG.session={
 /* ---------- shell ---------- */
 function userCard(u){
   var initial=esc((u.name||'?').charAt(0).toUpperCase());
-  return '<div class="who"><div class="avatar">'+initial+'</div><div><b>'+esc(u.name)+'</b><span class="small muted">'+(BG.store.mode==='firebase'?esc(u.email||'Signed in'):'Demo workspace')+'</span></div></div>'+
+  return '<div class="who"><div class="avatar">'+initial+'</div><div><b>'+esc(u.name||'User')+'</b><span class="small muted">'+esc(u.email||'Signed in')+'</span><span class="sidebar-role">'+esc(u.role||'')+'</span></div></div>'+
     '<div class="field"><label for="roleSel">Acting as</label>'+(
       BG.store.mode==='firebase'
         ?'<div class="current-role">'+esc(u.role)+'</div>'
@@ -82,7 +82,7 @@ function paintChrome(){
   document.getElementById('usercard').innerHTML=userCard(u);
   var mu=document.getElementById('mobileUser');
   if(mu)mu.innerHTML=BG.store.mode==='firebase'
-    ?'<span class="top-user"><span>'+esc(u.name||'User')+'</span><small>'+esc(u.role||'')+'</small></span>'
+    ?'<span class="top-user"><span>'+esc(u.name||'User')+'</span><small>'+esc(u.email||'')+' · '+esc(u.role||'')+'</small></span>'
     :'<select id="roleSelM" aria-label="Acting as">'+ROLES.map(function(r){return '<option'+(r===u.role?' selected':'')+'>'+r+'</option>';}).join('')+'</select>';
   var bm=document.getElementById('modeBadge');
   bm.textContent=BG.store.mode==='firebase'?'Live: Firebase':'Local demo';
