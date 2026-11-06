@@ -1,80 +1,106 @@
-const { initializeApp, cert, getApps } = require('firebase-admin/app');
-const { getAuth } = require('firebase-admin/auth');
+/* Vercel serverless function: server-side Gemini proxy.
+   - The Gemini key lives only in the GEMINI_API_KEY environment variable. It never reaches the browser.
+   - Only signed-in Firebase users can call it. The ID token is verified in one of two ways:
+       a) FIREBASE_SERVICE_ACCOUNT_JSON set  -> firebase-admin verifies it (strongest)
+       b) otherwise FIREBASE_API_KEY (the public web API key) -> Google's accounts:lookup endpoint verifies it
+   - Each user is limited to a handful of calls per minute.
+   GET returns {configured:boolean} so the app can show whether the deep check is available. */
 
-function json(res, status, body) {
-  res.status(status).json(body);
-}
+const WINDOW_MS = 60 * 1000;
+const MAX_CALLS = 8;
+const hits = new Map(); // uid -> timestamps (per warm instance; good enough for a hackathon, use Redis for scale)
 
-function initializeFirebase() {
-  if (getApps().length) return;
-  const serviceAccount = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
-  if (!serviceAccount) {
-    throw new Error('FIREBASE_SERVICE_ACCOUNT_JSON is not configured');
+function send(res, status, body) { res.status(status).json(body); }
+
+async function verifyToken(token) {
+  const sa = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+  if (sa) {
+    const { initializeApp, cert, getApps } = require('firebase-admin/app');
+    const { getAuth } = require('firebase-admin/auth');
+    if (!getApps().length) {
+      const parsed = JSON.parse(sa);
+      initializeApp({ credential: cert(parsed), projectId: parsed.project_id });
+    }
+    const decoded = await getAuth().verifyIdToken(token);
+    return decoded.uid;
   }
-  let parsed;
-  try {
-    parsed = JSON.parse(serviceAccount);
-  } catch (error) {
-    throw new Error('FIREBASE_SERVICE_ACCOUNT_JSON must contain valid JSON');
-  }
-  initializeApp({
-    credential: cert(parsed),
-    projectId: parsed.project_id
+  const webKey = process.env.FIREBASE_API_KEY;
+  if (!webKey) throw new Error('Set FIREBASE_API_KEY (or FIREBASE_SERVICE_ACCOUNT_JSON) in the Vercel environment');
+  const r = await fetch('https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=' + encodeURIComponent(webKey), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ idToken: token })
   });
+  if (!r.ok) throw new Error('Token rejected');
+  const j = await r.json();
+  const user = j.users && j.users[0];
+  if (!user || !user.localId) throw new Error('No user for token');
+  return user.localId;
 }
 
 module.exports = async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', process.env.APP_ORIGIN || '*');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  const origin = process.env.APP_ORIGIN;
+  if (origin) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Vary', 'Origin');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  }
+  res.setHeader('Cache-Control', 'no-store');
 
-  if (req.method === 'OPTIONS') return json(res, 204, {});
-  if (req.method !== 'POST') return json(res, 405, { error: 'POST only' });
-
+  if (req.method === 'OPTIONS') return send(res, 204, {});
   const key = process.env.GEMINI_API_KEY;
-  if (!key) return json(res, 503, { error: 'Gemini server configuration is missing' });
+  if (req.method === 'GET') return send(res, 200, { configured: !!key, model: process.env.GEMINI_MODEL || 'gemini-2.5-flash' });
+  if (req.method !== 'POST') return send(res, 405, { error: 'GET or POST only' });
+  if (!key) return send(res, 503, { error: 'GEMINI_API_KEY is not set on the server' });
 
+  let uid;
   try {
-    initializeFirebase();
     const authorization = req.headers.authorization || '';
     const token = authorization.startsWith('Bearer ') ? authorization.slice(7).trim() : '';
-    if (!token) return json(res, 401, { error: 'Firebase authentication required' });
-    await getAuth().verifyIdToken(token);
+    if (!token) return send(res, 401, { error: 'Sign in required' });
+    uid = await verifyToken(token);
   } catch (error) {
-    console.error('Gemini authentication configuration error', error.message);
-    return json(res, 401, { error: 'Firebase authentication failed' });
+    console.error('auth failed:', error.message);
+    return send(res, 401, { error: 'Sign in required' });
   }
 
-  const prompt = String(req.body && req.body.prompt || '').slice(0, 20000);
-  if (!prompt) return json(res, 400, { error: 'Prompt is required' });
+  const now = Date.now();
+  const recent = (hits.get(uid) || []).filter((t) => now - t < WINDOW_MS);
+  if (recent.length >= MAX_CALLS) return send(res, 429, { error: 'Too many requests. Wait a minute.' });
+  recent.push(now);
+  hits.set(uid, recent);
+
+  const body = typeof req.body === 'string' ? safeJson(req.body) : (req.body || {});
+  const prompt = String(body.prompt || '').slice(0, 30000);
+  if (!prompt) return send(res, 400, { error: 'Prompt is required' });
 
   const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
-  const url = 'https://generativelanguage.googleapis.com/v1beta/models/' +
-    encodeURIComponent(model) + ':generateContent?key=' + encodeURIComponent(key);
+  const generationConfig = { temperature: 0.1, maxOutputTokens: 8192, thinkingConfig: { thinkingBudget: 0 } };
+  if (body.json) generationConfig.responseMimeType = 'application/json';
 
   try {
-    const upstream = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ role: 'user', parts: [{ text: prompt }] }],
-        generationConfig: { temperature: 0.1, maxOutputTokens: 3000 }
-      })
-    });
+    const upstream = await fetch(
+      'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
+        body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: prompt }] }], generationConfig })
+      }
+    );
     if (!upstream.ok) {
-      const body = await upstream.text();
-      console.error('Gemini upstream error', upstream.status, body.slice(0, 500));
-      return json(res, 502, { error: 'Gemini upstream error', status: upstream.status });
+      console.error('Gemini upstream', upstream.status, (await upstream.text()).slice(0, 400));
+      return send(res, upstream.status === 429 ? 429 : 502, { error: 'Gemini upstream error', status: upstream.status });
     }
     const data = await upstream.json();
-    const text = ((data.candidates && data.candidates[0] &&
-      data.candidates[0].content && data.candidates[0].content.parts) || [])
-      .map((part) => part.text || '')
-      .join('\n');
-    if (!text) return json(res, 502, { error: 'Gemini returned an empty response' });
-    return json(res, 200, { text });
+    const text = ((data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts) || [])
+      .map((p) => p.text || '').join('\n');
+    if (!text) return send(res, 502, { error: 'Gemini returned an empty response' });
+    return send(res, 200, { text });
   } catch (error) {
-    console.error('Gemini request failed', error);
-    return json(res, 502, { error: 'Gemini request failed' });
+    console.error('Gemini request failed', error.message);
+    return send(res, 502, { error: 'Gemini request failed' });
   }
 };
+
+function safeJson(s) { try { return JSON.parse(s); } catch (e) { return {}; } }

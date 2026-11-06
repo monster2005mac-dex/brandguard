@@ -6,10 +6,10 @@
     "start": "python3 -m http.server 4173",
     "check": "node --check assets/js/*.js && node --check api/gemini.js"
   },
-  "dependencies": {
+  "optionalDependencies": {
     "firebase-admin": "^13.5.0"
   },
   "engines": {
-    "node": "26.x"
+    "node": ">=20"
   }
 }

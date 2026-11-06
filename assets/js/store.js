@@ -12,10 +12,19 @@ var fbc=cfg.firebase||{};
 var wantFirebase=!!(fbc.apiKey&&fbc.projectId);
 
 var LS_SHARED='bg.shared.v3',LS_USER='bg.user.v3';
-var ADMIN_EMAIL='admin@brandco.in';
+var HINT='bg.hint';
 var shared=null,subs=[],auth=null,db=null,fbReady=false;
 var S=BG.store={mode:wantFirebase?'firebase':'local',user:null,note:'',ready:null};
 
+/* Small, non-secret copy of who is signed in. Lets the landing page and the app show the right
+   state instantly, before Firebase has finished starting. It is only a hint: Firebase Auth stays the authority. */
+function homeFor(role){return role==='Admin'?'rules.html':'workflow.html';}
+function setHint(){
+  try{
+    if(S.user)localStorage.setItem(HINT,JSON.stringify({name:S.user.name||'',photo:S.user.photo||'',role:S.user.role||'',email:S.user.email||'',home:homeFor(S.user.role)}));
+    else localStorage.removeItem(HINT);
+  }catch(e){}
+}
 function emit(){subs.forEach(function(f){try{f();}catch(e){console.error(e);}});}
 function clean(x){return JSON.parse(JSON.stringify(x));}
 function readLS(k){try{var r=localStorage.getItem(k);return r?JSON.parse(r):null;}catch(e){return null;}}
@@ -25,7 +34,8 @@ function writeLS(k,v){var s=JSON.stringify(v);memLS[k]=s;try{localStorage.setIte
 Object.defineProperties(S,{
   rules:{get:function(){return shared.rules;}},
   docs:{get:function(){return shared.docs;}},
-  events:{get:function(){return shared.events;}}
+  events:{get:function(){return shared.events;}},
+  users:{get:function(){return shared.users||[];}}
 });
 S.subscribe=function(fn){subs.push(fn);};
 S.visibleDocs=function(){
@@ -71,7 +81,7 @@ function initFirebase(){
             return;
           }
           if(u){attach(u).catch(function(e){console.error(e);});}
-          else {S.user=null;emit();}
+          else {S.user=null;setHint();emit();}
         });
       });
     })
@@ -84,28 +94,30 @@ function initFirebase(){
 function attach(u){
   var uref=db.collection('users').doc(u.uid);
   return uref.get().then(function(snap){
-    var pending=null;try{pending=sessionStorage.getItem('bg.pendingRole');}catch(e){}
     var d=snap.exists?snap.data():null;
-    var isAdmin=(u.email||'').toLowerCase()===ADMIN_EMAIL;
-    var role=isAdmin?'Admin':(d&&d.role==='Admin'?((pending==='Creator'||pending==='Reviewer')?pending:'Creator'):(d&&d.role)||pending||'Creator');
-    var name=(d&&d.name)||u.displayName||(u.email||'').split('@')[0]||'User';
-    S.user={uid:u.uid,name:name,email:u.email||'',role:role,photo:u.photoURL||''};
-    return (!d||d.role!==role)?uref.set({name:name,email:u.email||'',role:role,createdAt:(d&&d.createdAt)||new Date().toISOString()},{merge:true}):null;
-  }).then(function(){return bootstrap(u.uid);}).then(listen).then(function(){return S.user;});
+    if(d)return d;
+    /* New account. The very first one (no workspace yet) becomes Admin; everyone else is a Creator.
+       The security rules enforce this, so it cannot be faked from the browser. */
+    var pendingName=null;try{pendingName=sessionStorage.getItem('bg.pendingName');sessionStorage.removeItem('bg.pendingName');}catch(e){}
+    var rec={name:pendingName||u.displayName||(u.email||'').split('@')[0]||'User',email:u.email||'',createdAt:new Date().toISOString()};
+    return db.collection('brand').doc('rules').get().then(function(r){
+      rec.role=r.exists?'Creator':'Admin';
+      return uref.set(rec).catch(function(){rec.role='Creator';return uref.set(rec);});
+    }).then(function(){return rec;});
+  }).then(function(d){
+    S.user={uid:u.uid,name:d.name||u.displayName||'User',email:u.email||d.email||'',role:d.role||'Creator',photo:d.photo||u.photoURL||''};setHint();
+  }).then(function(){return bootstrap();}).then(listen).then(function(){return S.user;});
 }
-function bootstrap(uid){
+function bootstrap(){
+  if(S.user.role!=='Admin')return null;
   var ref=db.collection('brand').doc('rules');
   return ref.get().then(function(s){
     if(s.exists)return null;
-    var seed=E.seedAll(),b=db.batch();
-    b.set(ref,clean(seed.rules));
-    seed.docs.forEach(function(d){d.owner=uid;d.sample=true;b.set(db.collection('docs').doc(d.id),clean(d));});
-    seed.events.forEach(function(e,i){b.set(db.collection('events').doc('seed-'+i),clean(e));});
-    return b.commit();
+    return ref.set(clean(E.templateRules(S.user.name?S.user.name+"'s company":'')));
   });
 }
 function listen(){
-  shared={rules:E.seedRules(),docs:[],events:[]};
+  shared={rules:E.templateRules(),docs:[],events:[],users:[]};
   return new Promise(function(res){
     var got={},need=3;
     function once(k){if(!got[k]){got[k]=1;if(--need===0)res();}}
@@ -121,16 +133,27 @@ function listen(){
       shared.events=snap.docs.map(function(d){return d.data();}).sort(function(a,b){return a.at<b.at?-1:1;});
       once('e');emit();
     },fail('e'));
+    db.collection('users').doc(S.user.uid).onSnapshot(function(snap){
+      var d=snap.exists?snap.data():null;
+      if(d&&d.role&&d.role!==S.user.role){S.user.role=d.role;setHint();location.reload();}
+    },function(e){console.error(e);});
+    if(S.user.role==='Admin'){
+      db.collection('users').onSnapshot(function(snap){
+        shared.users=snap.docs.map(function(d){var x=d.data();x.uid=d.id;return x;}).sort(function(a,b){return (a.createdAt||'')<(b.createdAt||'')?-1:1;});
+        emit();
+      },function(e){console.error(e);});
+    }
     setTimeout(function(){need=1;once('timeout');},8000);
   });
 }
 
 /* ---------- public API ---------- */
 S.init=function(){
-  if(!S.ready)S.ready=wantFirebase?initFirebase():initLocal();
+  if(!S.ready)S.ready=(wantFirebase?initFirebase():initLocal()).then(function(u){setHint();return u;});
   return S.ready;
 };
 S.saveRules=function(r){
+  delete r.gemini;
   shared.rules=r;emit();
   if(S.mode==='firebase')return db.collection('brand').doc('rules').set(clean(r)).catch(S._err);
   persistLocal();return Promise.resolve();
@@ -160,7 +183,7 @@ S.resetDemo=function(){
 
 /* ---------- auth ---------- */
 S.enterLocal=function(name,role){
-  S.user={uid:'local',name:name||role,email:'',role:role,photo:''};writeLS(LS_USER,S.user);return Promise.resolve(S.user);
+  S.user={uid:'local',name:name||role,email:'',role:role,photo:''};writeLS(LS_USER,S.user);setHint();return Promise.resolve(S.user);
 };
 S.setRole=function(role){
   if(!S.user)return Promise.resolve();
@@ -170,28 +193,51 @@ S.setRole=function(role){
     return Promise.resolve();
   }
   S.user.role=role;
-  writeLS(LS_USER,S.user);return Promise.resolve();
+  writeLS(LS_USER,S.user);setHint();return Promise.resolve();
 };
-S.signIn=function(email,pw){return auth.signInWithEmailAndPassword(email,pw).then(function(cred){
-  var signedInEmail=(cred.user.email||email||'').toLowerCase();
-  if(signedInEmail===ADMIN_EMAIL)return cred;
-  return cred;
-});};
-S.signUp=function(email,pw,name,role){
-  role=role==='Reviewer'?'Reviewer':'Creator';
-  try{sessionStorage.setItem('bg.pendingRole',role);}catch(e){}
+S.setUserRole=function(uid,role){
+  if(S.mode!=='firebase'||!S.user||S.user.role!=='Admin')return Promise.resolve();
+  if(uid===S.user.uid&&role!=='Admin'){
+    var admins=(shared.users||[]).filter(function(u){return u.role==='Admin';}).length;
+    if(admins<2){S.note='You are the only Admin. Make someone else an Admin before changing your own role.';emit();return Promise.resolve();}
+  }
+  return db.collection('users').doc(uid).update({role:role}).catch(S._err);
+};
+/* Replace the brand pack with the fictional Northwind demo brand (Admin only). Docs and events are left alone. */
+S.loadSamplePack=function(){
+  var r=E.seedRules();return S.saveRules(r);
+};
+S.signIn=function(email,pw){return auth.signInWithEmailAndPassword(email,pw);};
+S.signUp=function(email,pw,name){
+  try{sessionStorage.setItem('bg.pendingName',name||'');}catch(e){}
   return auth.createUserWithEmailAndPassword(email,pw).then(function(cred){
-    return cred.user.updateProfile({displayName:name}).then(function(){return db.collection('users').doc(cred.user.uid).set({name:name,email:email,role:role,createdAt:new Date().toISOString()});});
+    return cred.user.updateProfile({displayName:name}).then(function(){return cred;});
   });
 };
-S.google=function(role){
-  try{sessionStorage.setItem('bg.pendingRole',role);}catch(e){}
+S.google=function(){
   return auth.signInWithPopup(new window.firebase.auth.GoogleAuthProvider());
 };
 S.signOut=function(){
+  try{localStorage.removeItem(HINT);}catch(e){}
   if(S.mode==='firebase'&&auth)return auth.signOut();
   try{localStorage.removeItem(LS_USER);}catch(e){}
   S.user=null;return Promise.resolve();
+};
+S.resetPassword=function(email){
+  if(S.mode!=='firebase'||!auth)return Promise.reject({message:'Password reset needs Firebase sign-in.'});
+  return auth.sendPasswordResetEmail(email);
+};
+/* Profile photo: a small square JPEG data URL, stored on the user's own document. Empty string resets to the default. */
+S.setPhoto=function(url){
+  if(!S.user)return Promise.resolve();
+  var u=S.user;
+  if(S.mode==='firebase'){
+    var cur=auth&&auth.currentUser;
+    u.photo=url||(cur&&cur.photoURL)||'';
+    setHint();emit();
+    return db.collection('users').doc(u.uid).set({photo:url||''},{merge:true}).catch(S._err);
+  }
+  u.photo=url||'';writeLS(LS_USER,u);setHint();emit();return Promise.resolve();
 };
 S.idToken=function(){
   if(S.mode==='firebase'&&auth&&auth.currentUser)return auth.currentUser.getIdToken();

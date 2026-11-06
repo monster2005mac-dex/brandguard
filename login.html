@@ -4,7 +4,16 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Sign in | BrandGuard</title>
+<meta name="theme-color" content="#537A69">
+<link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
 <script>try{var t=localStorage.getItem('bg.theme');if(t)document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>
+<script>
+/* Already signed in? Skip this page. The hop guard stops a loop if the saved hint turns out to be stale. */
+try{
+  var h=JSON.parse(localStorage.getItem('bg.hint')||'null'),last=+sessionStorage.getItem('bg.hop')||0;
+  if(h&&/^[a-z]+\.html$/.test(h.home)&&Date.now()-last>8000&&location.search.indexOf('switch')<0){sessionStorage.setItem('bg.hop',String(Date.now()));location.replace(h.home);}
+}catch(e){}
+</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,400&family=Plus+Jakarta+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
@@ -21,7 +30,7 @@
     <p class="small" style="opacity:.7;position:relative;z-index:1">Demo data is fictional. Built for CodeNexus India 2026.</p>
   </aside>
   <main class="form">
-    <div class="box" id="box"><p class="muted">Loading&hellip;</p></div>
+    <div class="box" id="box"><a class="back-link" href="index.html">&larr; Back to website</a><div style="display:flex;align-items:center;gap:12px;padding:8px 0"><span class="spin" aria-hidden="true"></span><p class="muted">Checking your session&hellip;</p></div></div>
   </main>
 </div>
 <script src="assets/js/firebase-config.js"></script>
@@ -32,17 +41,20 @@
   var S=BG.store,box=document.getElementById('box'),esc=BG.engine.esc;
   var ROLES=[['Creator','Writes content, resolves findings, submits for approval.'],['Reviewer','Approves or requests changes. Cannot edit drafts.'],['Admin','Edits brand rules, facts and claims. Full access.']];
   function go(){
-    setTimeout(function(){
+    var tries=0;
+    (function wait(){
       var role=S.user&&S.user.role;
-      var email=(S.user&&S.user.email||document.getElementById('em')&&document.getElementById('em').value||'').toLowerCase();
-      if(role==='Admin'||email==='admin@brandco.in'){location.replace('rules.html');return;}
-      if(role==='Reviewer'){location.replace('workflow.html');return;}
+      if(!role&&tries++<50){setTimeout(wait,100);return;}
+      var email=(S.user&&S.user.email||'').toLowerCase();
+      try{sessionStorage.setItem('bg.hop',String(Date.now()));}catch(e){}
+      if(role==='Admin'){location.replace('rules.html');return;}
       location.replace('workflow.html');
-    },300);
+    })();
   }
+  var BACK='<a class="back-link" href="index.html">&larr; Back to website</a>';
   function demo(){
-    box.innerHTML='<h1 style="font-size:30px;margin-bottom:6px">Open the demo workspace</h1>'+
-      '<p class="muted" style="margin-bottom:20px">Pick a role. You can switch role at any time from the sidebar.</p>'+
+    box.innerHTML=BACK+'<h1 style="font-size:30px;margin-bottom:6px">Open the demo workspace</h1>'+
+      '<p class="muted" style="margin-bottom:20px">Pick a role to explore. In the live version roles are assigned by the workspace Admin.</p>'+
       (S.note?'<div class="note warn" style="margin-bottom:14px">'+esc(S.note)+'</div>':'')+
       '<div class="role-cards">'+ROLES.map(function(r){
         return '<button class="role-card" data-role="'+r[0]+'"><span class="ico"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-6 8-6s8 2 8 6"/></svg></span><b>'+r[0]+'</b><span>'+r[1]+'</span><span class="go">&rarr;</span></button>';}).join('')+'</div>'+
@@ -58,29 +70,40 @@
   }
   var mode='in';
   function live(){
-    box.innerHTML='<h1 style="font-size:30px;margin-bottom:6px">'+(mode==='in'?'Welcome back':'Create your account')+'</h1>'+
+    box.innerHTML=BACK+'<h1 style="font-size:30px;margin-bottom:6px">'+(mode==='in'?'Welcome back':'Create your account')+'</h1>'+
       '<p class="muted" style="margin-bottom:18px">Sign in to your BrandGuard workspace.</p>'+
       '<div class="tabs2" role="group"><button data-m="in" aria-pressed="'+(mode==='in')+'">Sign in</button><button data-m="up" aria-pressed="'+(mode==='up')+'">Sign up</button></div>'+
       '<form class="stack" id="f" novalidate>'+
         (mode==='up'?'<div class="field"><label for="nm">Name</label><input type="text" id="nm" autocomplete="name"></div>':'')+
-        '<div class="field"><label for="em">Email</label><input type="email" id="em" autocomplete="email"></div>'+
-        '<div class="field"><label for="pw">Password</label><input type="password" id="pw" autocomplete="'+(mode==='in'?'current-password':'new-password')+'"></div>'+
-        '<div class="field"><label for="rl">Role</label><select id="rl"><option>Creator</option><option>Reviewer</option></select><span class="small muted">'+(mode==='up'?'Used for your new account. Admin access is assigned separately in Firebase.':'Only used if this is your first Google sign-in. Admin access is assigned separately in Firebase.')+'</span></div>'+
-        '<div id="err" class="note warn" hidden></div>'+
-        '<button class="btn primary lg" type="submit">'+(mode==='in'?'Sign in':'Create account')+'</button>'+
+        '<div class="field"><label for="em">Email</label><input type="email" id="em" autocomplete="email" inputmode="email"></div>'+
+        '<div class="field"><label for="pw">Password</label><div class="pw-wrap"><input type="password" id="pw" autocomplete="'+(mode==='in'?'current-password':'new-password')+'"><button class="pw-toggle" type="button" id="pwt" aria-label="Show password">Show</button></div>'+(mode==='in'?'<button class="linkbtn small" type="button" id="forgot">Forgot password?</button>':'')+'</div>'+
+        (mode==='up'?'<p class="small muted">The first account in a new workspace becomes its Admin. Everyone after that starts as a Creator, and the Admin can make them a Reviewer.</p>':'')+
+        '<div id="err" class="note warn" role="alert" hidden></div>'+
+        '<button class="btn primary lg" type="submit" id="go">'+(mode==='in'?'Sign in':'Create account')+'</button>'+
         '<button class="btn lg" type="button" id="g">Continue with Google</button>'+
       '</form>';
     box.querySelectorAll('[data-m]').forEach(function(b){b.addEventListener('click',function(){mode=b.dataset.m;live();});});
-    var err=document.getElementById('err');
-    function fail(e){err.hidden=false;err.textContent=friendly(e);}
+    var err=document.getElementById('err'),goBtn=document.getElementById('go'),gBtn=document.getElementById('g');
+    function show(msg,ok){err.hidden=false;err.className='note '+(ok?'ok':'warn');err.textContent=msg;}
+    function fail(e){busy(false);show(friendly(e));}
+    function busy(on,label){goBtn.disabled=on;gBtn.disabled=on;if(on)goBtn.textContent=label||'Please wait\u2026';else goBtn.textContent=mode==='in'?'Sign in':'Create account';}
+    var pwi=document.getElementById('pw'),pwt=document.getElementById('pwt');
+    pwt.addEventListener('click',function(){var h=pwi.type==='password';pwi.type=h?'text':'password';pwt.textContent=h?'Hide':'Show';pwt.setAttribute('aria-label',h?'Hide password':'Show password');});
+    var fg=document.getElementById('forgot');
+    if(fg)fg.addEventListener('click',function(){
+      var em=document.getElementById('em').value.trim();
+      if(!em){err.hidden=false;err.className='note warn';err.textContent='Type your email above first, then choose Forgot password.';document.getElementById('em').focus();return;}
+      S.resetPassword(em).then(function(){show('If an account exists for '+em+', a reset link is on its way.',true);}).catch(fail);
+    });
     document.getElementById('f').addEventListener('submit',function(ev){
       ev.preventDefault();err.hidden=true;
-      var em=document.getElementById('em').value.trim(),pw=document.getElementById('pw').value,rl=document.getElementById('rl').value;
+      var em=document.getElementById('em').value.trim(),pw=pwi.value,rl='';
       if(!em||!pw){fail({message:'Enter your email and password.'});return;}
+      busy(true,mode==='in'?'Signing in\u2026':'Creating account\u2026');
       if(mode==='up'){var nm=(document.getElementById('nm').value||'').trim()||em.split('@')[0];S.signUp(em,pw,nm,rl).then(go).catch(fail);}
       else S.signIn(em,pw).then(go).catch(fail);
     });
-    document.getElementById('g').addEventListener('click',function(){err.hidden=true;S.google(document.getElementById('rl').value).then(go).catch(fail);});
+    gBtn.addEventListener('click',function(){err.hidden=true;busy(true,'Opening Google\u2026');S.google().then(go).catch(fail);});
   }
   function friendly(e){
     var c=e&&e.code||'';
@@ -88,7 +111,9 @@
       /email-already/.test(c)?'That email already has an account. Use Sign in.':
       /weak-password/.test(c)?'Use a password with at least 6 characters.':
       /invalid-email/.test(c)?'That email address does not look right.':
-      /popup-closed/.test(c)?'The Google window was closed before finishing.':
+      /popup-closed|cancelled-popup/.test(c)?'The Google window was closed before finishing.':
+      /too-many-requests/.test(c)?'Too many attempts. Wait a minute and try again.':
+      /network-request-failed/.test(c)?'No network connection. Check it and try again.':
       /operation-not-allowed/.test(c)?'This sign-in method is not enabled in the Firebase console yet.':
       (e&&e.message)||'Something went wrong. Try again.';
   }

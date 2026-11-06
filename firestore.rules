@@ -3,59 +3,76 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     function signedIn() { return request.auth != null; }
-    function role() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
-    }
-    function isReviewer() { return role() in ['Reviewer', 'Admin']; }
+    function me() { return get(/databases/$(database)/documents/users/$(request.auth.uid)).data; }
+    function role() { return me().role; }
+    function isAdmin() { return signedIn() && role() == 'Admin'; }
+    function isReviewer() { return signedIn() && role() in ['Reviewer', 'Admin']; }
+    function workspaceExists() { return exists(/databases/$(database)/documents/brand/rules); }
 
-    // A person can read profiles and edit only their own.
-    // NOTE: role switching from the sidebar is a hackathon demo feature. In production,
-    // remove the role field from client writes and set roles from an admin tool or custom claims.
+    // ---------- Users ----------
+    // Everyone signed in can read profiles (names for the audit trail).
+    // A new account is a Creator. The very first account, created while no workspace exists yet,
+    // becomes the workspace Admin. After that, ONLY an Admin can change anybody's role.
+    // People can edit their own name and photo, never their own role or email.
     match /users/{uid} {
       allow read: if signedIn();
       allow create: if signedIn() && request.auth.uid == uid
-        && (request.resource.data.role in ['Creator', 'Reviewer']
-          || (request.resource.data.role == 'Admin' && request.auth.token.email == 'admin@brandco.in'));
-      allow update: if signedIn() && request.auth.uid == uid
-        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['role'])
-          || (request.auth.token.email == 'admin@brandco.in'
-            && request.resource.data.role == 'Admin')
-          || (resource.data.role == 'Admin'
-            && request.resource.data.role in ['Creator', 'Reviewer']));
-    }
-
-    // Brand rules: anyone signed in can read. Only an Admin can change them.
-    // The first sign-in can create the seed document.
-    // Gemini keys are included for the browser-prototype feature only. On Vercel,
-    // keep the real key in the GEMINI_API_KEY environment variable instead:
-    // browser-side values are readable by authenticated clients and are not secrets.
-    match /brand/{id} {
-      allow read: if signedIn();
-      allow create: if signedIn();
-      allow update: if signedIn() && role() == 'Admin';
-    }
-
-    // Documents: any signed-in user can create and read.
-    // Only Reviewer or Admin can move a document to Approved or Changes requested.
-    match /docs/{docId} {
-      allow read: if signedIn() && (
-        resource.data.owner == request.auth.uid
-        || isReviewer()
-      );
-      allow create: if signedIn()
-        && request.resource.data.owner == request.auth.uid;
+        && (request.resource.data.role == 'Creator'
+          || (request.resource.data.role == 'Admin' && !workspaceExists()));
       allow update: if signedIn() && (
-        (resource.data.owner == request.auth.uid
-          && request.resource.data.owner == resource.data.owner)
-        || isReviewer()
-      ) && resource.data.status != 'Approved';
+        (request.auth.uid == uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'photo']))
+        || (isAdmin()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['role'])
+          && request.resource.data.role in ['Creator', 'Reviewer', 'Admin'])
+      );
       allow delete: if false;
     }
 
-    // Events are an append-only log used for insights.
+    // ---------- Brand rules ----------
+    // Anyone signed in can read. Only an Admin can create or change the brand pack.
+    // No secrets are stored here: the Gemini key lives on the server (Vercel env var).
+    match /brand/{id} {
+      allow read: if signedIn();
+      allow create, update: if isAdmin();
+      allow delete: if false;
+    }
+
+    // ---------- Documents ----------
+    // A creator reads and writes their own documents. Reviewers and Admins read all.
+    // Only a Reviewer or Admin can set Approved / Changes requested, and nobody can approve
+    // a document they own (separation of duties).
+    // When an owner edits an Approved or Changes-requested document it must go back to Draft.
+    match /docs/{docId} {
+      allow read: if signedIn() && (resource.data.owner == request.auth.uid || isReviewer());
+      allow create: if signedIn()
+        && request.resource.data.owner == request.auth.uid
+        && request.resource.data.status in ['Draft', 'In review'];
+      allow update: if signedIn()
+        && request.resource.data.owner == resource.data.owner
+        && (
+          // owner saving or submitting
+          (resource.data.owner == request.auth.uid
+            && request.resource.data.status in ['Draft', 'In review'])
+          // owner re-saving a reviewed document without touching its status is not allowed;
+          // the client must reset it to Draft, which the line above permits.
+          // reviewer / admin decisions on somebody else's document
+          || (isReviewer() && resource.data.owner != request.auth.uid
+              && request.resource.data.status in ['Draft', 'In review', 'Approved', 'Changes requested'])
+          // reviewer / admin may comment on their own document only as Draft / In review
+          || (isReviewer() && resource.data.owner == request.auth.uid
+              && request.resource.data.status in ['Draft', 'In review'])
+        );
+      allow delete: if false;
+    }
+
+    // ---------- Events ----------
+    // Append-only log that powers Insights. Must look like a real event.
     match /events/{eventId} {
       allow read: if signedIn();
-      allow create: if signedIn();
+      allow create: if signedIn()
+        && request.resource.data.keys().hasAll(['ruleId', 'outcome', 'at'])
+        && request.resource.data.outcome in ['accepted', 'edited', 'disputed'];
       allow update, delete: if false;
     }
   }

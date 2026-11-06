@@ -29,22 +29,58 @@ function table(){
   return h;
 }
 var HELP={guidelines:'Written rules. Exact rule checks run instantly. Rules without one are used by the Gemini deep check.',terms:'Words to avoid and the approved replacement.',facts:'Each fact has an owner and an expiry date. An expired fact is flagged wherever it appears in a draft.',claims:'Risky claims. With no evidence on file, a matching claim is flagged and routed to a reviewer.'};
-function geminiPanel(){
+function aiPanel(){
   var c=sh.can();if(!c.admin)return '';
-  var gemini=S.rules.gemini||(S.rules.gemini={active:'',keys:[]});
-  return '<section class="panel"><div class="row" style="justify-content:space-between"><div><h2>Google Gemini API keys</h2><p class="small muted">Admin manages keys. All workspace users can use the active key on the Review page.</p></div><button class="btn primary sm" data-act="addGeminiKey">Add API key</button></div>'+
-    '<div class="note warn" style="margin-top:12px">Prototype warning: browser-side keys are not secret. Use restricted Gemini keys and do not use a production billing key until a server-side proxy is added.</div>'+
-    '<div class="stack" style="margin-top:12px">'+(gemini.keys.length?gemini.keys.map(function(k){
-      var active=gemini.active===k.id;
-      return '<div class="row" style="justify-content:space-between;border-top:1px solid var(--line);padding-top:10px"><div><b>'+esc(k.name||'Gemini key')+'</b><div class="mono muted">'+esc(k.key?'AI...'+k.key.slice(-6):'No key')+'</div></div><div class="row">'+
-        '<button class="btn sm'+(active?' primary':'')+'" data-act="useGeminiKey" data-id="'+k.id+'">'+(active?'Active':'Use for workspace')+'</button>'+
-        '<button class="btn sm danger" data-act="removeGeminiKey" data-id="'+k.id+'">Remove</button></div></div>';
-    }).join(''):'<div class="empty">No Gemini key configured.</div>')+'</div></section>';
+  var AI=BG.ai,live=S.mode==='firebase';
+  var status=AI.server?'<span class="pill ok">Server AI connected</span>':AI.hasLocalKey()?'<span class="pill brand">Personal key on this device</span>':'<span class="pill high">Not configured</span>';
+  return '<section class="panel"><div class="row" style="justify-content:space-between"><div><h2>AI engine (Gemini)</h2><p class="small muted">Powers the deep check, the guideline-document import and rule-wording suggestions. Exact rule checks never need it.</p></div><div class="row">'+status+'</div></div>'+
+    '<div class="note" style="margin-top:12px">'+(live
+      ?'The Gemini key lives on the server as the <span class="mono">GEMINI_API_KEY</span> environment variable. It is never sent to the browser or stored in the database. Every call needs a signed-in account and is rate-limited.'
+      :'Local demo mode has no server. Paste a personal Gemini key below to try the AI features. It stays in this browser only.')+'</div>'+
+    '<div class="row" style="margin-top:12px"><button class="btn sm" data-act="aiTest">Test connection</button><button class="btn sm" data-act="aiKey">'+(AI.hasLocalKey()?'Change personal key':'Use a personal key on this device')+'</button>'+(AI.hasLocalKey()?'<button class="btn sm danger" data-act="aiKeyClear">Remove personal key</button>':'')+'</div></section>';
 }
+function teamPanel(){
+  var c=sh.can();if(!c.admin||S.mode!=='firebase')return '';
+  var users=S.users||[];
+  return '<section class="panel"><h2>Team</h2><p class="small muted" style="margin:4px 0 12px">New people sign up as Creators. Make someone a Reviewer so they can approve content. Roles are enforced by the database rules, not the browser.</p>'+
+    '<div class="scroll"><table class="tbl"><thead><tr><th>Name</th><th>Email</th><th>Role</th></tr></thead><tbody>'+(users.length?users.map(function(u){
+      return '<tr><td><b>'+esc(u.name||'')+'</b>'+(u.uid===S.user.uid?' <span class="pill">You</span>':'')+'</td><td class="muted">'+esc(u.email||'')+'</td><td><select data-act="setRole" data-uid="'+esc(u.uid)+'" aria-label="Role for '+esc(u.name||u.email||'user')+'">'+['Creator','Reviewer','Admin'].map(function(r){return '<option'+(r===u.role?' selected':'')+'>'+r+'</option>';}).join('')+'</select></td></tr>';
+    }).join(''):'<tr><td colspan="3" class="muted">Loading team…</td></tr>')+'</tbody></table></div></section>';
+}
+function setupPanel(){
+  var c=sh.can(),R=S.rules;if(!c.admin)return '';
+  var empty=!R.terms.length&&!R.facts.length;
+  return '<section class="panel"><div class="row" style="justify-content:space-between;align-items:flex-start"><div><h2>'+(empty?'Set up your brand pack':'Brand pack')+'</h2><p class="small muted" style="max-width:62ch">'+(empty?'Your workspace has the generic checks (tone, absolute claims, readability, accessibility) and no company-specific terms or facts yet. Upload your brand guidelines and Gemini will draft the rules for you to review, or add them by hand.':'Upload an updated guidelines document to add more rules, or edit the lists below.')+'</p></div>'+
+    '<div class="row"><button class="btn primary" data-act="importDoc"'+(BG.ai.available?'':' title="Needs the AI engine"')+'>Import from guidelines document</button><input type="file" id="guideFile" accept=".pdf,.docx,.txt,.md" hidden></div></div>'+
+    '<div class="row" style="margin-top:12px"><label class="small muted" for="companyName">Company name</label><input type="text" id="companyName" value="'+esc(R.company)+'" style="flex:1 1 220px;max-width:340px"><button class="btn sm" data-act="saveCompany">Save</button>'+
+    (S.mode==='firebase'?'<button class="btn sm ghost" data-act="loadSample" title="Replaces the brand pack with the fictional Northwind Learn demo brand">Load sample brand pack</button>':'')+'</div></section>';
+}
+function previewImport(p,name){
+  var cnt=function(n,w){return '<li><b>'+n+'</b> '+w+'</li>';};
+  var list=function(arr,fn){return arr.length?'<ul class="small" style="margin:4px 0 10px 18px">'+arr.map(fn).join('')+'</ul>':'';};
+  UI.modal('<h2 style="font-size:20px;margin-bottom:6px">Review what Gemini found in '+esc(name)+'</h2><p class="small muted" style="margin-bottom:10px">Nothing is saved until you confirm. Facts need an expiry date, which you can set afterwards.</p>'+
+    '<div class="stack" style="max-height:52vh;overflow:auto">'+
+    '<div><b>'+p.guidelines.length+' guidelines</b>'+list(p.guidelines,function(g){return '<li><b>'+esc(g.title)+'</b>: '+esc(g.text)+'</li>';})+'</div>'+
+    '<div><b>'+p.terms.length+' terms</b>'+list(p.terms,function(t){return '<li>'+esc(t.avoid)+' &rarr; <b>'+esc(t.good)+'</b></li>';})+'</div>'+
+    '<div><b>'+p.facts.length+' approved facts</b>'+list(p.facts,function(f){return '<li>'+esc(f.subject)+': <b>'+esc(f.value)+' '+esc(f.noun)+'</b> (owner: '+esc(f.owner)+')</li>';})+'</div>'+
+    '<div><b>'+p.claims.length+' risky-claim types</b>'+list(p.claims,function(c){return '<li>'+esc(c.label)+': '+c.words.map(esc).join(', ')+'</li>';})+'</div></div>'+
+    '<div class="row" style="justify-content:flex-end;margin-top:14px"><button class="btn" data-ui="closeModal">Discard</button><button class="btn primary" data-act="confirmImport">Add to brand pack</button></div>');
+  pendingImport=p;
+}
+function mergeImport(p){
+  var R=S.rules,exp=E.isoPlus(365),have=function(list,key,val){return list.some(function(x){return String(x[key]).toLowerCase()===String(val).toLowerCase();});};
+  if(p.company&&(!R.company||/^Your company|company$/i.test(R.company)))R.company=p.company;
+  p.guidelines.forEach(function(g){if(!have(R.guidelines,'title',g.title))R.guidelines.push({id:E.nextId('G',R.guidelines),title:g.title,text:g.text,check:null,category:'Tone'});});
+  p.terms.forEach(function(t){if(!have(R.terms,'avoid',t.avoid))R.terms.push({id:E.nextId('T',R.terms),avoid:t.avoid,pattern:E.escRe(t.avoid),good:t.good.replace(/\$/g,'$$$$'),text:'Say "'+t.good+'", not "'+t.avoid+'".'});});
+  p.facts.forEach(function(f){if(!have(R.facts,'subject',f.subject))R.facts.push({id:E.nextId('F',R.facts),subject:f.subject,value:f.value,display:f.value+' '+f.noun,pattern:'(\\d[\\d,]*)\\+?\\s+'+E.escRe(f.noun),owner:f.owner,expires:exp});});
+  p.claims.forEach(function(c){if(!have(R.claims,'label',c.label))R.claims.push({id:E.nextId('C',R.claims),label:c.label,pattern:c.words.map(E.escRe).join('|'),evidence:'',fix:'a well-regarded',text:c.label+' claims need evidence on file and a reviewer sign-off.'});});
+  save();
+}
+var pendingImport=null;
 function render(){
   var c=sh.can(),y=window.scrollY;
-  $('page').innerHTML=  '<div class="stack">'+geminiPanel()+
-    '<div class="note">'+(c.admin?'You are acting as Admin and can edit the brand knowledge.':'Read only. Switch to Admin in the sidebar to edit.')+' Every finding cites an item below by its ID. Company: <b>'+esc(S.rules.company)+'</b>.</div>'+
+  $('page').innerHTML=  '<div class="stack">'+setupPanel()+aiPanel()+teamPanel()+
+    '<div class="note">'+(c.admin?'You are acting as Admin and can edit the brand knowledge.':'Read only. Only an Admin can edit the brand pack.')+' Every finding cites an item below by its ID. Company: <b>'+esc(S.rules.company)+'</b>.</div>'+
     '<div class="row" style="justify-content:space-between"><div class="seg" role="group" aria-label="Rule type">'+TABS.map(function(t){return '<button data-act="tab" data-t="'+t[0]+'" aria-pressed="'+(tab===t[0])+'">'+t[1]+'</button>';}).join('')+'</div>'+
       (c.admin?'<div class="row"><button class="btn primary" data-act="add">Add '+({guidelines:'guideline',terms:'term',facts:'fact',claims:'claim type'})[tab]+'</button>'+
         '<button class="btn" data-act="importPack">Import JSON</button><button class="btn" data-act="exportPack">Export JSON</button>'+
@@ -69,21 +105,21 @@ document.addEventListener('click',function(ev){
   var a=el.dataset.act,id=el.dataset.id,R=S.rules,v=function(i){return ($(i).value||'').trim();};
   if(a==='tab'){tab=el.dataset.t;render();return;}
   if(a==='add'){form();return;}
-  if(a==='addGeminiKey'){
-    UI.modal('<h2 style="font-size:20px;margin-bottom:14px">Add Google Gemini API key</h2><div class="stack"><div class="field"><label for="geminiName">Key label</label><input type="text" id="geminiName" placeholder="Hackathon key 1"></div><div class="field"><label for="geminiKey">Gemini API key</label><input type="password" id="geminiKey" autocomplete="off" placeholder="AIza..."></div><div class="row" style="justify-content:flex-end"><button class="btn" data-ui="closeModal">Cancel</button><button class="btn primary" data-act="saveGeminiKey">Add and activate</button></div></div>');
+  if(a==='aiTest'){
+    UI.toast('Testing…');
+    BG.ai.refresh().then(function(){return BG.ai.text('Reply with the single word: ready');}).then(function(t){UI.toast('Gemini replied: '+String(t).trim().slice(0,40));render();}).catch(function(e){UI.toast(BG.ai.errorCopy(e));render();});
     return;}
-  if(a==='saveGeminiKey'){
-    var name=v('geminiName'),key=v('geminiKey');
-    if(!key){UI.toast('Enter a Gemini API key.');return;}
-    var gemini=R.gemini||(R.gemini={active:'',keys:[]});
-    var id='gemini-'+Date.now();gemini.keys.push({id:id,name:name||'Gemini key',key:key});gemini.active=id;
-    UI.closeModal();save();BG.ai.refresh().then(function(){render();});UI.toast('Gemini key added and activated for the workspace.');
+  if(a==='aiKey'){
+    UI.modal('<h2 style="font-size:20px;margin-bottom:10px">Personal Gemini key</h2><p class="small muted" style="margin-bottom:12px">Stored only in this browser. It is not shared with your team and never written to the database. For a shared deployment, set <span class="mono">GEMINI_API_KEY</span> on the server instead.</p><div class="field"><label for="geminiKey">Gemini API key</label><input type="password" id="geminiKey" autocomplete="off" placeholder="AIza..."></div><div class="row" style="justify-content:flex-end;margin-top:14px"><button class="btn" data-ui="closeModal">Cancel</button><button class="btn primary" data-act="aiKeySave">Save on this device</button></div>');
     return;}
-  if(a==='useGeminiKey'){R.gemini.active=id;save();BG.ai.refresh().then(function(){render();});UI.toast('Gemini key activated for the workspace.');return;}
-  if(a==='removeGeminiKey'){
-    var gemini2=R.gemini||(R.gemini={active:'',keys:[]});gemini2.keys=gemini2.keys.filter(function(k){return k.id!==id;});
-    if(gemini2.active===id)gemini2.active=gemini2.keys.length?gemini2.keys[0].id:'';
-    save();BG.ai.refresh().then(function(){render();});UI.toast('Gemini key removed.');return;}
+  if(a==='aiKeySave'){var k=v('geminiKey');if(!k){UI.toast('Enter a key.');return;}UI.closeModal();BG.ai.setLocalKey(k).then(function(){render();UI.toast('Key saved on this device.');});return;}
+  if(a==='aiKeyClear'){BG.ai.setLocalKey('').then(function(){render();UI.toast('Personal key removed.');});return;}
+  if(a==='saveCompany'){var nm=v('companyName');if(!nm){UI.toast('Enter a company name.');return;}R.company=nm;save();UI.toast('Company name saved.');return;}
+  if(a==='loadSample'){if(window.confirm('Replace the current brand pack with the fictional Northwind Learn demo pack?'))S.loadSamplePack().then(function(){UI.toast('Sample brand pack loaded.');});return;}
+  if(a==='importDoc'){
+    if(!BG.ai.available){UI.toast('Set up the AI engine first (server key or a personal key).');return;}
+    $('guideFile').click();return;}
+  if(a==='confirmImport'){if(pendingImport){mergeImport(pendingImport);pendingImport=null;UI.closeModal();render();UI.toast('Brand pack updated. Review the new rules below.');}return;}
   if(a==='exportPack'){
     var blob=new Blob([JSON.stringify({company:S.rules.company,guidelines:S.rules.guidelines,terms:S.rules.terms,facts:S.rules.facts,claims:S.rules.claims},null,2)],{type:'application/json'});
     var url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='brandguard-brand-pack.json';link.click();URL.revokeObjectURL(url);UI.toast('Brand pack exported.');
@@ -117,6 +153,21 @@ document.addEventListener('click',function(ev){
 
 sh.start({page:'rules',title:'Brand rules',sub:'The approved knowledge every finding is checked against.',onReady:render,onData:function(){if(!document.getElementById('modal').classList.contains('on'))render();}});
 
+document.addEventListener('change',function(ev){
+  var t=ev.target;
+  if(t.dataset&&t.dataset.act==='setRole'){S.setUserRole(t.dataset.uid,t.value).then(function(){UI.toast('Role updated.');});return;}
+  if(t.id==='guideFile'&&t.files&&t.files[0]){
+    var gf=t.files[0];UI.toast('Reading '+gf.name+'…');
+    window.BGDocumentImport.extract(gf).then(function(text){
+      if(text.trim().length<80)throw new Error('The file has almost no text.');
+      return BG.ai.extractRules(text);
+    }).then(function(p){
+      if(!(p.guidelines.length+p.terms.length+p.facts.length+p.claims.length))throw new Error('No rules were found in that document.');
+      previewImport(p,gf.name);
+    }).catch(function(e){UI.toast(e&&e.code?BG.ai.errorCopy(e):'Import failed: '+(e&&e.message));}).then(function(){t.value='';});
+    return;
+  }
+});
 document.addEventListener('change',function(ev){
   if(ev.target.id!=='brandPackFile'||!ev.target.files||!ev.target.files[0])return;
   var file=ev.target.files[0];

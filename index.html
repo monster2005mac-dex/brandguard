@@ -3,15 +3,22 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>BrandGuard</title>
+<title>BrandGuard | Catch off-brand content before it goes live</title>
+<meta name="theme-color" content="#537A69">
+<link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
+<meta property="og:type" content="website">
+<meta property="og:title" content="BrandGuard: pre-publication brand governance">
+<meta property="og:description" content="Every flag cites the exact brand rule behind it. Humans approve everything.">
+<meta name="twitter:card" content="summary">
 <meta name="description" content="BrandGuard checks every draft against your approved brand guidelines, facts and claims, cites the rule behind each flag, and routes risky copy to a reviewer.">
-<script>try{var t=localStorage.getItem('bg.theme');if(t)document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>
+<script>document.documentElement.classList.add('js');try{var t=localStorage.getItem('bg.theme');if(t)document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,400&family=Plus+Jakarta+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
 <link rel="stylesheet" href="assets/css/styles.css">
 </head>
 <body>
+<a class="skip" href="#main">Skip to content</a>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
   <symbol id="i-shield" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5c0 5-3.4 8.2-7 10-3.6-1.8-7-5-7-10V6l7-3z"/><path d="M9 12l2.2 2.2L15.5 10"/></symbol>
   <symbol id="i-book" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2V5z"/><path d="M8 7h7M8 11h5"/></symbol>
@@ -25,18 +32,22 @@
 <header class="nav">
   <div class="wrap">
     <a class="logo" href="index.html"><svg><use href="#i-shield"/></svg>BrandGuard</a>
-    <nav class="links" aria-label="Main">
+    <nav class="links" id="menu" aria-label="Main">
       <a class="l" href="#problem">Problem</a>
       <a class="l" href="#how">How it works</a>
       <a class="l" href="#trust">Why trust it</a>
-      <a class="l" href="about.html">About</a>
-      <button class="btn ghost sm" id="theme" aria-label="Toggle dark mode">Theme</button>
-      <a class="btn primary sm" href="login.html">Open workspace</a>
+      <a class="l" href="#faq">FAQ</a>
     </nav>
+    <div class="nav-right">
+      <button class="btn ghost icon-btn" id="theme" type="button" aria-label="Toggle dark mode" title="Toggle dark mode"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></svg></button>
+      <span id="authSlot" class="auth-slot"><a class="btn primary sm" href="login.html">Login</a></span>
+      <button class="menu-btn" id="menuBtn" type="button" aria-label="Open menu" aria-expanded="false" aria-controls="menu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+    </div>
   </div>
 </header>
+<script src="assets/js/nav-auth.js"></script>
 
-<main>
+<main id="main">
 <section class="hero">
   <div class="wrap hero-grid">
     <div class="reveal">
@@ -44,7 +55,7 @@
       <h1>Catch off-brand content <em>before</em> it goes live.</h1>
       <p class="lead">BrandGuard checks every draft against your approved guidelines, facts and claims. Each flag cites the exact rule behind it, suggests a fix that keeps the writer's intent, and sends risky copy to the right reviewer.</p>
       <div class="cta">
-        <a class="btn primary lg" href="login.html">Try the live demo</a>
+        <a class="btn primary lg" href="login.html" data-cta data-out="Try the live demo">Try the live demo</a>
         <a class="btn lg" href="#how">See how it works</a>
       </div>
       <div class="badges"><span>No source, no flag</span><span>Humans approve everything</span><span>Facts expire</span></div>
@@ -104,6 +115,20 @@
   </div>
 </section>
 
+<section class="section alt" id="faq">
+  <div class="wrap">
+    <span class="eyebrow">Questions</span>
+    <h2>Things people ask first.</h2>
+    <div class="faq">
+      <details><summary>Does the AI approve or rewrite my content?</summary><p>No. Rule checks run in your browser and suggest a fix. An optional Gemini deep check can add findings, but only a person accepts, edits or disputes them, and only a Reviewer or Admin can approve.</p></details>
+      <details><summary>Where does my draft go?</summary><p>Rule checks stay in your browser. Your draft and rule list are sent to Google Gemini only when you click the deep check. Saved content and its history live in your workspace.</p></details>
+      <details><summary>What happens when the AI is wrong?</summary><p>Every AI finding must cite a rule that exists and quote text that is really in the draft, or it is dropped. The screen tells you how many were dropped, and you can dispute any finding with a reason.</p></details>
+      <details><summary>Who can do what?</summary><p>Creators write and submit. Reviewers approve or request changes but cannot edit drafts. Admins maintain the brand rules, facts and claims.</p></details>
+      <details><summary>Does it check images and layouts?</summary><p>Not yet. Today it reviews text, including text imported from PDF and DOCX files. Image and layout checks are on the roadmap.</p></details>
+    </div>
+  </div>
+</section>
+
 <section class="section">
   <div class="wrap">
     <span class="eyebrow">Built for three roles</span>
@@ -117,18 +142,32 @@
       <h2>See it flag a real draft in under a minute.</h2>
       <p>The demo opens with a sample brand pack and a draft full of mistakes. Pick a role and try to fix them.</p>
       <p class="small" style="margin-top:10px;opacity:.75">Suggested judge route: Creator &rarr; resolve findings &rarr; submit &rarr; switch to Reviewer &rarr; approve.</p>
-      <a class="btn primary lg" href="login.html">Open workspace</a>
+      <a class="btn primary lg" href="login.html" data-cta data-out="Login to open the workspace">Login to open the workspace</a>
     </div>
   </div>
 </section>
 </main>
 
 <footer class="wrap foot">
+  <div class="foot-links"><a href="#problem">Problem</a><a href="#how">How it works</a><a href="#trust">Why trust it</a><a href="#faq">FAQ</a><a href="login.html" data-cta data-out="Login">Login</a></div>
   <div><b>AI use disclosure.</b> Rule checks run in your browser. The optional Gemini deep check sends the draft and your rule list to Google, and Gemini never edits or approves anything.</div>
   <div>Built with Google Gemini assistance for CodeNexus India 2026. The brand pack, facts and sample history are fictional demo data.</div>
 </footer>
 
 <script>
+(function(){
+  var mb=document.getElementById('menuBtn'),menu=document.getElementById('menu');
+  function closeMenu(){menu.classList.remove('open');mb.setAttribute('aria-expanded','false');}
+  mb.addEventListener('click',function(){var o=menu.classList.toggle('open');mb.setAttribute('aria-expanded',o?'true':'false');});
+  menu.addEventListener('click',function(e){if(e.target.closest('a'))closeMenu();});
+  document.addEventListener('keydown',function(e){if(e.key==='Escape')closeMenu();});
+  var rv=[].slice.call(document.querySelectorAll('.section .card,.step,.princ>div,.cta-band,.faq details'));
+  rv.forEach(function(el,i){el.classList.add('rv');el.style.transitionDelay=(i%4)*70+'ms';});
+  if('IntersectionObserver' in window){
+    var io=new IntersectionObserver(function(en){en.forEach(function(x){if(x.isIntersecting){x.target.classList.add('in');io.unobserve(x.target);}});},{threshold:.12,rootMargin:'0px 0px -40px 0px'});
+    rv.forEach(function(el){io.observe(el);});
+  }else rv.forEach(function(el){el.classList.add('in');});
+})();
 (function(){
   var t=document.getElementById('theme');
   t.addEventListener('click',function(){

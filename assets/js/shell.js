@@ -60,6 +60,32 @@ BG.session={
 };
 
 /* ---------- shell ---------- */
+function topProfileHTML(u){
+  return (u.photo?'<img class="top-profile-avatar" src="'+esc(u.photo)+'" alt="">':'<span class="top-profile-avatar">'+esc((u.name||'?').charAt(0).toUpperCase())+'</span>')+'<span><b>'+esc(u.name||'User')+'</b><small>'+esc(u.role||'')+'</small></span>';
+}
+function profileHTML(u){
+  return '<div class="profile-panel"><div class="profile-heading">'+(u.photo?'<img class="profile-large" src="'+esc(u.photo)+'" alt="">':'<div class="avatar profile-large">'+esc((u.name||'?').charAt(0).toUpperCase())+'</div>')+'<div><span class="eyebrow">Signed-in account</span><h2>'+esc(u.name||'User')+'</h2><p class="muted">'+esc(u.email||'')+'</p></div></div>'+
+    '<div class="profile-grid"><div><span>Role</span><b>'+esc(u.role||'')+'</b></div><div><span>Workspace</span><b>BrandGuard</b></div></div>'+
+    '<div class="photo-actions"><label class="btn sm" for="photoIn">Change photo</label><input type="file" id="photoIn" accept="image/*" class="sr"><button class="btn sm ghost" data-ui="resetPhoto" type="button">Reset photo</button></div>'+
+    '<button class="btn" data-ui="theme">Change theme</button><a class="btn" href="index.html">Back to website</a><button class="btn danger" data-ui="signout">Sign out</button></div>';
+}
+function resizePhoto(file,cb){
+  if(!file||!/^image\//.test(file.type)){cb(null);return;}
+  var r=new FileReader();
+  r.onerror=function(){cb(null);};
+  r.onload=function(){
+    var img=new Image();
+    img.onerror=function(){cb(null);};
+    img.onload=function(){
+      var n=160,c=document.createElement('canvas');c.width=c.height=n;
+      var m=Math.min(img.width,img.height),x=c.getContext('2d');
+      x.drawImage(img,(img.width-m)/2,(img.height-m)/2,m,m,0,0,n,n);
+      cb(c.toDataURL('image/jpeg',0.82));
+    };
+    img.src=r.result;
+  };
+  r.readAsDataURL(file);
+}
 function userCard(u){
   var initial=esc((u.name||'?').charAt(0).toUpperCase());
   return '<button class="who profile-link" data-ui="profile" type="button">'+(u.photo?'<img class="avatar avatar-photo" src="'+esc(u.photo)+'" alt="">':'<div class="avatar">'+initial+'</div>')+'<div><b>'+esc(u.name||'User')+'</b><span class="small muted">'+esc(u.email||'Signed in')+'</span><span class="sidebar-role">'+esc(u.role||'')+'</span></div><span class="profile-arrow">›</span></button>'+
@@ -68,7 +94,8 @@ function userCard(u){
         ?'<div class="current-role">'+esc(u.role)+'</div>'
         :'<select id="roleSel">'+ROLES.map(function(r){return '<option'+(r===u.role?' selected':'')+'>'+r+'</option>';}).join('')+'</select>'
     )+'</div>'+
-    '<div class="row"><button class="btn sm ghost" data-ui="theme">Theme</button><button class="btn sm ghost" data-ui="signout">Sign out</button></div>';
+    '<div class="row"><button class="btn sm ghost" data-ui="theme">Theme</button><button class="btn sm ghost" data-ui="signout">Sign out</button></div>'+
+    '<a class="site-link" href="index.html">&larr; Back to website</a>';
 }
 function buildNav(page){
   var inReview=BG.store.visibleDocs().filter(function(d){return d.status==='In review';}).length;
@@ -82,6 +109,7 @@ function paintChrome(){
   var u=BG.store.user,page=ctxOpts.page;
   document.getElementById('navlist').innerHTML=buildNav(page);
   document.getElementById('usercard').innerHTML=userCard(u);
+  var tp=document.getElementById('topProfile');if(tp)tp.innerHTML=topProfileHTML(u);
   var mu=document.getElementById('mobileUser');
   if(mu)mu.innerHTML=BG.store.mode==='firebase'
     ?'<button class="top-user" type="button" data-ui="profile"><span>'+esc(u.name||'User')+'</span><small>'+esc(u.email||'')+' · '+esc(u.role||'')+'</small></button>'
@@ -106,11 +134,11 @@ BG.shell={
           '<aside class="rail"><a class="logo" href="'+workspaceHome+'">'+svg('shield')+'BrandGuard</a><div class="workspace-label"><span>Workspace</span><b>'+esc(user.role||'Account')+'</b></div><nav class="navlist" id="navlist" aria-label="Primary navigation"></nav><div class="usercard" id="usercard"></div></aside>'+
           '<div class="main">'+
             '<header class="topbar"><div><h1>'+esc(opts.title)+'</h1><div class="sub">'+esc(opts.sub||'')+'</div></div>'+
-              '<div class="right"><span id="mobileUser" class="mobile-user"></span><button class="top-profile" type="button" data-ui="profile">'+(user.photo?'<img class="top-profile-avatar" src="'+esc(user.photo)+'" alt="">':'<span class="top-profile-avatar">'+esc((user.name||'?').charAt(0).toUpperCase())+'</span>')+'<span><b>'+esc(user.name||'User')+'</b><small>'+esc(user.role||'')+'</small></span></button><span id="modeBadge" class="badge-mode"></span><span id="topActions"></span></div></header>'+
+              '<div class="right"><span id="mobileUser" class="mobile-user"></span><button class="top-profile" id="topProfile" type="button" data-ui="profile">'+topProfileHTML(user)+'</button>'+'<span id="modeBadge" class="badge-mode"></span><span id="topActions"></span></div></header>'+
             '<div id="note" class="banner" hidden></div>'+
             '<div class="content" id="page"></div>'+
             '<footer class="appfoot"><div><b>AI use disclosure.</b> Rule checks run in your browser. The optional Gemini deep check sends the draft and the rule list to Google. Gemini never edits or approves anything: a person accepts, edits or disputes every finding.</div>'+
-            '<div>Powered by Google Gemini for CodeNexus India 2026. The brand pack, facts and sample history are fictional demo data.</div></footer>'+
+            '<div>Powered by Google Gemini for CodeNexus India 2026. In local demo mode the brand pack, facts and history are fictional sample data.</div></footer>'+
           '</div>'+
         '</div>'+
         '<div class="scrim" id="scrim"></div><aside class="drawer" id="drawer" aria-label="Details"></aside><div class="modal" id="modal" role="dialog" aria-modal="true"></div><div class="toast-wrap" id="toasts" role="status" aria-live="polite"></div>';
@@ -123,17 +151,25 @@ BG.shell={
           var a=el.dataset.ui;
           if(a==='close')UI.closeDrawer();
           if(a==='theme')toggleTheme();
-          if(a==='signout')BG.store.signOut().then(function(){location.href='login.html';});
+          if(a==='signout')BG.store.signOut().then(function(){location.href='index.html';});
+          if(a==='resetPhoto')BG.store.setPhoto('').then(function(){UI.drawer(profileHTML(BG.store.user));UI.toast('Photo reset.');});
           if(a==='closeModal')UI.closeModal();
           if(a==='profile'){
-            var u=BG.store.user;
-            UI.drawer('<div class="profile-panel"><div class="profile-heading">'+(u.photo?'<img class="profile-large" src="'+esc(u.photo)+'" alt="">':'<div class="avatar profile-large">'+esc((u.name||'?').charAt(0).toUpperCase())+'</div>')+'<div><span class="eyebrow">Signed-in account</span><h2>'+esc(u.name||'User')+'</h2><p class="muted">'+esc(u.email||'')+'</p></div></div><div class="profile-grid"><div><span>Role</span><b>'+esc(u.role||'')+'</b></div><div><span>Workspace</span><b>BrandGuard</b></div></div><button class="btn" data-ui="theme">Change theme</button><button class="btn danger" data-ui="signout">Sign out</button></div>');
+            UI.drawer(profileHTML(BG.store.user));
           }
           return;
         }
         if(e.target.id==='scrim'){UI.closeDrawer();}
       });
       document.addEventListener('change',function(e){
+        if(e.target.id==='photoIn'){
+          var f=e.target.files&&e.target.files[0];
+          resizePhoto(f,function(url){
+            if(!url){UI.toast('Choose an image file (JPG, PNG or WebP).');return;}
+            BG.store.setPhoto(url).then(function(){UI.drawer(profileHTML(BG.store.user));UI.toast('Profile photo updated.');});
+          });
+          return;
+        }
         if(e.target.id==='roleSel'||e.target.id==='roleSelM'){
           BG.store.setRole(e.target.value).then(function(){
             paintChrome();if(opts.onRole)opts.onRole();if(opts.onData)opts.onData();

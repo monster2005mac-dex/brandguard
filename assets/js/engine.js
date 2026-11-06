@@ -42,13 +42,22 @@ function seedRules(){
       {id:'F-02',subject:'Monthly price',value:'499',display:'₹499 per month',pattern:'₹\\s?(\\d[\\d,]*)',owner:'Finance',expires:'2026-09-30'},
       {id:'F-03',subject:'Course count',value:'120',display:'120 courses',pattern:'(\\d[\\d,]*)\\+?\\s+courses',owner:'Content team',expires:isoPlus(20)}
     ],
-    gemini:{active:'',keys:[]},
     claims:[
       {id:'C-01',label:'Market ranking',pattern:"(?:india['’]s\\s+)?(?:#\\s?1|no\\.\\s?1|number\\s+one)|best\\s+in\\s+india|market\\s+leader",evidence:'',fix:'a trusted',text:'Ranking claims need third-party evidence on file and a reviewer sign-off.'},
       {id:'C-02',label:'Proven results',pattern:'clinically\\s+proven|scientifically\\s+proven|proven\\s+to',evidence:'',fix:'designed around learning research to',text:'"Proven" claims need a cited study on file.'}
     ]
   };
 }
+/* A real workspace starts from this: the generic exact checks, no invented company facts.
+   The Admin adds terms, facts and claims, or imports them from a brand-guidelines document. */
+function templateRules(company){
+  var r=seedRules();
+  r.company=company||'Your company';
+  r.terms=[];r.facts=[];
+  r.gemini=undefined;delete r.gemini;
+  return r;
+}
+function brandName(R){return String((R&&R.company)||'our brand').replace(/\s*\(.*?\)\s*/g,' ').trim()||'our brand';}
 function seedEvents(){
   var d=function(n){return new Date(NOW.getTime()-n*864e5).toISOString();};
   var e=[];
@@ -157,12 +166,12 @@ function runRules(text,R){
       iter(/\b(click here|read more)\b/gi,function(m){
         var s=span(m);s.ruleId=g.id;s.category='Accessibility';s.severity='low';
         s.why='Link text should say where the link goes. "'+m[0]+'" means nothing out of context.';
-        s.suggestion='Join Northwind Learn';s.needsInput=true;add(s);
+        s.suggestion='Visit '+brandName(R);s.needsInput=true;add(s);
       });
       iter(/https?:\/\/\S+/gi,function(m){
         var s=span(m);s.ruleId=g.id;s.category='Accessibility';s.severity='low';
         s.why='A bare URL is difficult to understand in screen readers and assistive previews. Use meaningful destination text.';
-        s.suggestion='Visit Northwind Learn';s.needsInput=true;add(s);
+        s.suggestion='Visit '+brandName(R);s.needsInput=true;add(s);
       });
     }
     if(g.check==='readability'){
@@ -300,6 +309,6 @@ function reliability(){
 }
 
 BG.engine={TODAY:TODAY,isoPlus:isoPlus,esc:esc,escRe:escRe,fmt:fmt,plural:plural,clone:clone,SAMPLE_DRAFT:SAMPLE_DRAFT,
-  seedRules:seedRules,seedAll:seedAll,freshSession:freshSession,factStatus:factStatus,allRules:allRules,nextId:nextId,
+  seedRules:seedRules,templateRules:templateRules,brandName:brandName,seedAll:seedAll,freshSession:freshSession,factStatus:factStatus,allRules:allRules,nextId:nextId,
   runRules:runRules,confLabel:confLabel,score:score,diffHtml:diffHtml,insightRows:insightRows,reliability:reliability};
 })();
