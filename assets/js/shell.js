@@ -63,7 +63,11 @@ BG.session={
 function userCard(u){
   var initial=esc((u.name||'?').charAt(0).toUpperCase());
   return '<div class="who"><div class="avatar">'+initial+'</div><div><b>'+esc(u.name)+'</b><span class="small muted">'+(BG.store.mode==='firebase'?esc(u.email||'Signed in'):'Demo workspace')+'</span></div></div>'+
-    '<div class="field"><label for="roleSel">Acting as</label><select id="roleSel">'+ROLES.map(function(r){return '<option'+(r===u.role?' selected':'')+'>'+r+'</option>';}).join('')+'</select></div>'+
+    '<div class="field"><label for="roleSel">Acting as</label>'+(
+      BG.store.mode==='firebase'
+        ?'<div class="current-role">'+esc(u.role)+'</div>'
+        :'<select id="roleSel">'+ROLES.map(function(r){return '<option'+(r===u.role?' selected':'')+'>'+r+'</option>';}).join('')+'</select>'
+    )+'</div>'+
     '<div class="row"><button class="btn sm ghost" data-ui="theme">Theme</button><button class="btn sm ghost" data-ui="signout">Sign out</button></div>';
 }
 function buildNav(page){
@@ -77,7 +81,9 @@ function paintChrome(){
   document.getElementById('navlist').innerHTML=buildNav(page);
   document.getElementById('usercard').innerHTML=userCard(u);
   var mu=document.getElementById('mobileUser');
-  if(mu)mu.innerHTML='<select id="roleSelM" aria-label="Acting as">'+ROLES.map(function(r){return '<option'+(r===u.role?' selected':'')+'>'+r+'</option>';}).join('')+'</select>';
+  if(mu)mu.innerHTML=BG.store.mode==='firebase'
+    ?'<span class="top-user"><span>'+esc(u.name||'User')+'</span><small>'+esc(u.role||'')+'</small></span>'
+    :'<select id="roleSelM" aria-label="Acting as">'+ROLES.map(function(r){return '<option'+(r===u.role?' selected':'')+'>'+r+'</option>';}).join('')+'</select>';
   var bm=document.getElementById('modeBadge');
   bm.textContent=BG.store.mode==='firebase'?'Live: Firebase':'Local demo';
   bm.className='badge-mode'+(BG.store.mode==='firebase'?' live':'');
@@ -97,7 +103,7 @@ BG.shell={
           '<aside class="rail"><a class="logo" href="index.html">'+svg('shield')+'BrandGuard</a><nav class="navlist" id="navlist" aria-label="App"></nav><div class="usercard" id="usercard"></div></aside>'+
           '<div class="main">'+
             '<header class="topbar"><div><h1>'+esc(opts.title)+'</h1><div class="sub">'+esc(opts.sub||'')+'</div></div>'+
-              '<div class="right"><span id="mobileUser" class="mobile-user"></span><span id="modeBadge" class="badge-mode"></span><span id="topActions"></span></div></header>'+
+              '<div class="right"><span id="mobileUser" class="mobile-user"></span><span class="top-profile"><span class="top-profile-avatar">'+esc((user.name||'?').charAt(0).toUpperCase())+'</span><span><b>'+esc(user.name||'User')+'</b><small>'+esc(user.role||'')+'</small></span></span><span id="modeBadge" class="badge-mode"></span><span id="topActions"></span></div></header>'+
             '<div id="note" class="banner" hidden></div>'+
             '<div class="content" id="page"></div>'+
             '<footer class="appfoot"><div><b>AI use disclosure.</b> Rule checks run in your browser. The optional Gemini deep check sends the draft and the rule list to Google. Gemini never edits or approves anything: a person accepts, edits or disputes every finding.</div>'+

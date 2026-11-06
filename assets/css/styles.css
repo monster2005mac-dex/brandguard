@@ -187,6 +187,13 @@ textarea{resize:vertical;line-height:1.6}
 .topbar h1{font-size:26px}
 .topbar .sub{color:var(--muted);font-size:14px}
 .topbar .right{margin-left:auto;display:flex;gap:8px;align-items:center}
+.top-profile{display:flex;align-items:center;gap:8px;padding:6px 10px 6px 6px;border:1px solid var(--line);border-radius:99px;background:var(--surface)}
+.top-profile-avatar{width:30px;height:30px;border-radius:50%;background:var(--brand);color:var(--brand-ink);display:grid;place-items:center;font-size:13px;font-weight:700}
+.top-profile>span:last-child{display:grid;line-height:1.1;padding-right:2px}
+.top-profile b{font-size:13px}
+.top-profile small,.top-user small{color:var(--muted);font-size:11px;margin-top:3px}
+.top-user{display:grid;text-align:right;line-height:1.1;font-size:13px;font-weight:600}
+.current-role{border:1px solid var(--line);border-radius:9px;padding:8px 10px;font-weight:600;background:var(--surface)}
 .content{padding:16px 32px 32px;flex:1}
 .appfoot{padding:16px 32px 28px;color:var(--muted);font-size:12.5px;border-top:1px solid var(--line);display:grid;gap:3px}
 @media (max-width:900px){
@@ -200,6 +207,7 @@ textarea{resize:vertical;line-height:1.6}
   .topbar{padding:16px 16px 4px}.content{padding:12px 16px 96px}.appfoot{padding:16px 16px 96px}
   .topbar h1{font-size:22px}
   .mobile-user{display:flex!important}
+  .top-profile{display:none}
 }
 .mobile-user{display:none;gap:8px;align-items:center}
 .mobile-user select{width:auto;padding:6px 8px;font-size:13px}
