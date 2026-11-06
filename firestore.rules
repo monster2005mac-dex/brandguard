@@ -1,0 +1,56 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function role() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    }
+    function isReviewer() { return role() in ['Reviewer', 'Admin']; }
+
+    // A person can read profiles and edit only their own.
+    // NOTE: role switching from the sidebar is a hackathon demo feature. In production,
+    // remove the role field from client writes and set roles from an admin tool or custom claims.
+    match /users/{uid} {
+      allow read: if signedIn();
+      allow create: if signedIn() && request.auth.uid == uid
+        && (request.resource.data.role in ['Creator', 'Reviewer']
+          || (request.resource.data.role == 'Admin' && request.auth.token.email == 'admin@brandco.in'));
+      allow update: if signedIn() && request.auth.uid == uid
+        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['role'])
+          || (request.auth.token.email == 'admin@brandco.in'
+            && request.resource.data.role == 'Admin'));
+    }
+
+    // Brand rules: anyone signed in can read. Only an Admin can change them.
+    // The first sign-in can create the seed document.
+    // Gemini keys are included for the browser-prototype feature only. On Vercel,
+    // keep the real key in the GEMINI_API_KEY environment variable instead:
+    // browser-side values are readable by authenticated clients and are not secrets.
+    match /brand/{id} {
+      allow read: if signedIn();
+      allow create: if signedIn();
+      allow update: if signedIn() && role() == 'Admin';
+    }
+
+    // Documents: any signed-in user can create and read.
+    // Only Reviewer or Admin can move a document to Approved or Changes requested.
+    match /docs/{docId} {
+      allow read: if signedIn();
+      allow create: if signedIn();
+      allow update: if signedIn() && (
+        request.resource.data.status in ['Draft', 'In review']
+        || request.resource.data.status == resource.data.status
+        || isReviewer()
+      ) && resource.data.status != 'Approved';
+      allow delete: if false;
+    }
+
+    // Events are an append-only log used for insights.
+    match /events/{eventId} {
+      allow read: if signedIn();
+      allow create: if signedIn();
+      allow update, delete: if false;
+    }
+  }
+}

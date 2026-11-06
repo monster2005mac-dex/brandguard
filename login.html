@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Sign in | BrandGuard</title>
+<script>try{var t=localStorage.getItem('bg.theme');if(t)document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@600;700&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="assets/css/styles.css">
+</head>
+<body>
+<div class="auth">
+  <aside class="side">
+    <a class="logo" href="index.html" style="color:inherit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="width:28px;height:28px"><path d="M12 3l7 3v5c0 5-3.4 8.2-7 10-3.6-1.8-7-5-7-10V6l7-3z"/><path d="M9 12l2.2 2.2L15.5 10"/></svg>BrandGuard</a>
+    <div>
+      <h2>Every flag shows its source.</h2>
+      <p style="opacity:.85;max-width:44ch">Open the workspace to review a draft, fix cited findings, and walk it through approval as a creator, reviewer or brand admin.</p>
+    </div>
+    <p class="small" style="opacity:.7;position:relative;z-index:1">Demo data is fictional. Built for CodeNexus India 2026.</p>
+  </aside>
+  <main class="form">
+    <div class="box" id="box"><p class="muted">Loading&hellip;</p></div>
+  </main>
+</div>
+<script src="assets/js/firebase-config.js"></script>
+<script src="assets/js/engine.js"></script>
+<script src="assets/js/store.js"></script>
+<script>
+(function(){
+  var S=BG.store,box=document.getElementById('box'),esc=BG.engine.esc;
+  var ROLES=[['Creator','Writes content, resolves findings, submits for approval.'],['Reviewer','Approves or requests changes. Cannot edit drafts.'],['Admin','Edits brand rules, facts and claims. Full access.']];
+  function go(){location.href='review.html';}
+  function demo(){
+    box.innerHTML='<h1 style="font-size:30px;margin-bottom:6px">Open the demo workspace</h1>'+
+      '<p class="muted" style="margin-bottom:20px">Pick a role. You can switch role at any time from the sidebar.</p>'+
+      (S.note?'<div class="note warn" style="margin-bottom:14px">'+esc(S.note)+'</div>':'')+
+      '<div class="role-cards">'+ROLES.map(function(r){
+        return '<button class="role-card" data-role="'+r[0]+'"><span class="ico"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-6 8-6s8 2 8 6"/></svg></span><b>'+r[0]+'</b><span>'+r[1]+'</span><span class="go">&rarr;</span></button>';}).join('')+'</div>'+
+        '<button class="btn sm ghost" id="resetDemo" type="button" style="margin-top:12px">Reset demo data</button>'+
+        '<p class="small muted" style="margin-top:18px">Local demo mode: data stays in this browser. Add your Firebase keys in <span class="mono">assets/js/firebase-config.js</span> for real accounts and shared data.</p>';
+    box.querySelectorAll('[data-role]').forEach(function(b){b.addEventListener('click',function(){S.enterLocal('Demo user',b.dataset.role).then(go);});});
+    document.getElementById('resetDemo').addEventListener('click',function(){
+        S.resetDemo().then(function(){
+          try{Object.keys(localStorage).forEach(function(k){if(k.indexOf('bg.session.')===0)localStorage.removeItem(k);});}catch(e){}
+          location.reload();
+        });
+    });
+  }
+  var mode='in';
+  function live(){
+    box.innerHTML='<h1 style="font-size:30px;margin-bottom:6px">'+(mode==='in'?'Welcome back':'Create your account')+'</h1>'+
+      '<p class="muted" style="margin-bottom:18px">Sign in to your BrandGuard workspace.</p>'+
+      '<div class="tabs2" role="group"><button data-m="in" aria-pressed="'+(mode==='in')+'">Sign in</button><button data-m="up" aria-pressed="'+(mode==='up')+'">Sign up</button></div>'+
+      '<form class="stack" id="f" novalidate>'+
+        (mode==='up'?'<div class="field"><label for="nm">Name</label><input type="text" id="nm" autocomplete="name"></div>':'')+
+        '<div class="field"><label for="em">Email</label><input type="email" id="em" autocomplete="email"></div>'+
+        '<div class="field"><label for="pw">Password</label><input type="password" id="pw" autocomplete="'+(mode==='in'?'current-password':'new-password')+'"></div>'+
+        '<div class="field"><label for="rl">Role</label><select id="rl"><option>Creator</option><option>Reviewer</option></select><span class="small muted">'+(mode==='up'?'Used for your new account. Admin access is assigned separately in Firebase.':'Only used if this is your first Google sign-in. Admin access is assigned separately in Firebase.')+'</span></div>'+
+        '<div id="err" class="note warn" hidden></div>'+
+        '<button class="btn primary lg" type="submit">'+(mode==='in'?'Sign in':'Create account')+'</button>'+
+        '<button class="btn lg" type="button" id="g">Continue with Google</button>'+
+      '</form>';
+    box.querySelectorAll('[data-m]').forEach(function(b){b.addEventListener('click',function(){mode=b.dataset.m;live();});});
+    var err=document.getElementById('err');
+    function fail(e){err.hidden=false;err.textContent=friendly(e);}
+    document.getElementById('f').addEventListener('submit',function(ev){
+      ev.preventDefault();err.hidden=true;
+      var em=document.getElementById('em').value.trim(),pw=document.getElementById('pw').value,rl=document.getElementById('rl').value;
+      if(!em||!pw){fail({message:'Enter your email and password.'});return;}
+      if(mode==='up'){var nm=(document.getElementById('nm').value||'').trim()||em.split('@')[0];S.signUp(em,pw,nm,rl).then(go).catch(fail);}
+      else S.signIn(em,pw).then(go).catch(fail);
+    });
+    document.getElementById('g').addEventListener('click',function(){err.hidden=true;S.google(document.getElementById('rl').value).then(go).catch(fail);});
+  }
+  function friendly(e){
+    var c=e&&e.code||'';
+    return /wrong-password|invalid-credential|user-not-found/.test(c)?'Email or password is not right.':
+      /email-already/.test(c)?'That email already has an account. Use Sign in.':
+      /weak-password/.test(c)?'Use a password with at least 6 characters.':
+      /invalid-email/.test(c)?'That email address does not look right.':
+      /popup-closed/.test(c)?'The Google window was closed before finishing.':
+      /operation-not-allowed/.test(c)?'This sign-in method is not enabled in the Firebase console yet.':
+      (e&&e.message)||'Something went wrong. Try again.';
+  }
+  S.init().then(function(user){
+    if(user)return go();
+    if(S.mode==='firebase')live();else demo();
+  });
+})();
+</script>
+</body>
+</html>

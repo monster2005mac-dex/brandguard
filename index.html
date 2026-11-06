@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>BrandGuard</title>
+<meta name="description" content="BrandGuard checks every draft against your approved brand guidelines, facts and claims, cites the rule behind each flag, and routes risky copy to a reviewer.">
+<script>try{var t=localStorage.getItem('bg.theme');if(t)document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@600;700&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="assets/css/styles.css">
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-shield" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5c0 5-3.4 8.2-7 10-3.6-1.8-7-5-7-10V6l7-3z"/><path d="M9 12l2.2 2.2L15.5 10"/></symbol>
+  <symbol id="i-book" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2V5z"/><path d="M8 7h7M8 11h5"/></symbol>
+  <symbol id="i-board" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="5" height="16" rx="1.5"/><rect x="10" y="4" width="5" height="10" rx="1.5"/><rect x="17" y="4" width="4" height="6" rx="1.5"/></symbol>
+  <symbol id="i-chart" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V11M10 20V4M16 20v-7M22 20H2"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+  <symbol id="i-user" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-6 8-6s8 2 8 6"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></symbol>
+</svg>
+
+<header class="nav">
+  <div class="wrap">
+    <a class="logo" href="index.html"><svg><use href="#i-shield"/></svg>BrandGuard</a>
+    <nav class="links" aria-label="Main">
+      <a class="l" href="#problem">Problem</a>
+      <a class="l" href="#how">How it works</a>
+      <a class="l" href="#trust">Why trust it</a>
+      <a class="l" href="about.html">About</a>
+      <button class="btn ghost sm" id="theme" aria-label="Toggle dark mode">Theme</button>
+      <a class="btn primary sm" href="login.html">Open the app</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+<section class="hero">
+  <div class="wrap hero-grid">
+    <div class="reveal">
+      <span class="eyebrow">Brand governance, before you publish</span>
+      <h1>Catch off-brand content <em>before</em> it goes live.</h1>
+      <p class="lead">BrandGuard checks every draft against your approved guidelines, facts and claims. Each flag cites the exact rule behind it, suggests a fix that keeps the writer's intent, and sends risky copy to the right reviewer.</p>
+      <div class="cta">
+        <a class="btn primary lg" href="login.html">Try the live demo</a>
+        <a class="btn lg" href="#how">See how it works</a>
+      </div>
+      <div class="badges"><span>No source, no flag</span><span>Humans approve everything</span><span>Facts expire</span></div>
+    </div>
+    <div class="demo reveal" style="animation-delay:.12s" aria-label="Example of BrandGuard flagging a draft">
+      <div class="demo-bar"><i></i><i></i><i></i><span style="margin-left:6px">launch-post.txt</span></div>
+      <p class="demo-text">We are <mark class="hi" data-n="0">India's #1</mark> learning platform and we <mark class="hi" data-n="1">guarantee 100%</mark> results. Over <mark class="hi" data-n="2">52,000</mark> learners study with us.</p>
+      <div class="cites">
+        <div class="cite" data-n="0"><span class="chip">C-01</span><span class="t">Ranking claim with no evidence on file</span><span class="d">Sent to a reviewer. Suggested: <del>India's #1</del> <ins>a trusted</ins></span></div>
+        <div class="cite" data-n="1"><span class="chip">G-02</span><span class="t">Guaranteed outcomes are not allowed</span><span class="d">Suggested: <del>guarantee 100%</del> <ins>aim for</ins></span></div>
+        <div class="cite" data-n="2"><span class="chip">F-01</span><span class="t">Approved learner count is 48,000</span><span class="d">Owner: Growth team. Suggested: <del>52,000</del> <ins>48,000</ins></span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section alt" id="problem">
+  <div class="wrap">
+    <span class="eyebrow">The problem</span>
+    <h2>Brand rules exist. Nobody sees them while writing.</h2>
+    <p class="sub">Content now comes from marketers, agencies, freelancers, sales teams and AI tools. Each reads the guidelines differently, and a PDF cannot stop anyone at the moment they press Publish.</p>
+    <div class="grid3">
+      <div class="card"><div class="ico"><svg><use href="#i-book"/></svg></div><h3>Guidelines live in PDFs</h3><p>Writers guess. Reviewers repeat the same corrections, and the rules never get clearer.</p></div>
+      <div class="card"><div class="ico"><svg><use href="#i-clock"/></svg></div><h3>Facts go stale</h3><p>Prices, counts and offers change. Old numbers keep appearing in new posts until a customer notices.</p></div>
+      <div class="card"><div class="ico"><svg><use href="#i-eye"/></svg></div><h3>Reviewers become the bottleneck</h3><p>One small team proofreads everything, including content that was never risky.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="how">
+  <div class="wrap">
+    <span class="eyebrow">How it works</span>
+    <h2>From draft to approved in four steps.</h2>
+    <div class="steps">
+      <div class="step"><h3>Teach it your brand</h3><p>Admins add guidelines, approved terms, facts with an owner and expiry date, and a register of risky claims.</p></div>
+      <div class="step"><h3>Paste a draft</h3><p>Rule checks run live while you type. An optional Gemini deep check catches tone and meaning that keywords miss.</p></div>
+      <div class="step"><h3>Resolve cited findings</h3><p>Every flag shows why, the source rule, and a before and after. You accept, edit, or dispute with a reason.</p></div>
+      <div class="step"><h3>Reviewer approves</h3><p>Risky items route to a reviewer with comments, version history and an audit trail. Insights show where rules are unclear.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="section alt" id="trust">
+  <div class="wrap split2">
+    <div>
+      <span class="eyebrow">Why trust it</span>
+      <h2>An assistant that shows its sources.</h2>
+      <p class="sub">A checker that invents rules is worse than none. BrandGuard is built so a flag can always be traced and challenged.</p>
+      <div style="margin-top:22px"><a class="btn" href="about.html">Read the architecture</a></div>
+    </div>
+    <div class="princ">
+      <div><b>No source, no flag</b><span>Findings from the AI are dropped unless they cite a real rule and quote text that is actually in the draft.</span></div>
+      <div><b>Humans decide</b><span>Nothing is edited or approved by AI. A person accepts, edits or disputes every finding.</span></div>
+      <div><b>Facts have owners and expiry dates</b><span>An out-of-date price is flagged even when it matches the old approved value.</span></div>
+      <div><b>It fixes the rules, not just the content</b><span>When creators keep disputing a guideline, BrandGuard points at the guideline as the problem.</span></div>
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="wrap">
+    <span class="eyebrow">Built for three roles</span>
+    <h2>Everyone sees what they need.</h2>
+    <div class="grid3">
+      <div class="card"><div class="ico"><svg><use href="#i-user"/></svg></div><h3>Creator</h3><p>Write, get instant cited feedback, resolve issues, and submit for approval.</p></div>
+      <div class="card"><div class="ico"><svg><use href="#i-board"/></svg></div><h3>Reviewer</h3><p>See only what needs judgement, with the evidence attached. Approve or request changes.</p></div>
+      <div class="card"><div class="ico"><svg><use href="#i-chart"/></svg></div><h3>Brand admin</h3><p>Maintain rules, facts and claims. Watch insights to find unclear guidelines and stale facts.</p></div>
+    </div>
+    <div class="cta-band" style="margin-top:56px">
+      <h2>See it flag a real draft in under a minute.</h2>
+      <p>The demo opens with a sample brand pack and a draft full of mistakes. Pick a role and try to fix them.</p>
+      <p class="small" style="margin-top:10px;opacity:.75">Suggested judge route: Creator &rarr; resolve findings &rarr; submit &rarr; switch to Reviewer &rarr; approve.</p>
+      <a class="btn primary lg" href="login.html">Open the app</a>
+    </div>
+  </div>
+</section>
+</main>
+
+<footer class="wrap foot">
+  <div><b>AI use disclosure.</b> Rule checks run in your browser. The optional Gemini deep check sends the draft and your rule list to Google, and Gemini never edits or approves anything.</div>
+  <div>Built with Google Gemini assistance for CodeNexus India 2026. The brand pack, facts and sample history are fictional demo data.</div>
+</footer>
+
+<script>
+(function(){
+  var t=document.getElementById('theme');
+  t.addEventListener('click',function(){
+    var cur=document.documentElement.getAttribute('data-theme');
+    var dark=cur?cur==='dark':window.matchMedia('(prefers-color-scheme: dark)').matches;
+    var next=dark?'light':'dark';
+    document.documentElement.setAttribute('data-theme',next);
+    try{localStorage.setItem('bg.theme',next);}catch(e){}
+  });
+  var marks=[].slice.call(document.querySelectorAll('.demo-text mark'));
+  var cites=[].slice.call(document.querySelectorAll('.cite'));
+  function show(n){marks.forEach(function(m,i){m.classList.toggle('on',i===n);});cites.forEach(function(c,i){c.classList.toggle('on',i===n);});}
+  if(window.matchMedia('(prefers-reduced-motion: reduce)').matches){marks.forEach(function(m){m.classList.add('on');});cites.forEach(function(c){c.classList.add('on');});return;}
+  var n=0;show(0);setInterval(function(){n=(n+1)%marks.length;show(n);},2800);
+  marks.forEach(function(m,i){m.addEventListener('mouseenter',function(){n=i;show(i);});});
+})();
+</script>
+</body>
+</html>
