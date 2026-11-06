@@ -91,7 +91,7 @@ document.addEventListener('click',function(ev){
 });
 
 sh.start({
-  page:'workflow',title:'Workflow',sub:'Content moves from draft to approved. Reviewers see only what needs a decision.',
+  page:'workflow',title:'Workshop',sub:'Your direct workspace for drafts, review decisions and approvals.',
   onReady:function(){
     try{var s=sessionStorage.getItem('bg.selDoc');if(s){sessionStorage.removeItem('bg.selDoc');sel=s;}}catch(e){}
     render();

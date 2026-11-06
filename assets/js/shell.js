@@ -14,7 +14,7 @@ var ICON={
   shield:'<path d="M12 3l7 3v5c0 5-3.4 8.2-7 10-3.6-1.8-7-5-7-10V6l7-3z"/><path d="M9 12l2.2 2.2L15.5 10"/>'
 };
 function svg(n,cls){return '<svg class="'+(cls||'')+'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+ICON[n]+'</svg>';}
-var NAV=[['review','Review','review.html'],['workflow','Workflow','workflow.html'],['rules','Brand rules','rules.html'],['insights','Insights','insights.html'],['about','About','about.html']];
+var NAV=[['review','Review','review.html'],['workflow','Workshop','workflow.html'],['rules','Brand rules','rules.html'],['insights','Insights','insights.html'],['about','About','about.html']];
 var ROLES=['Creator','Reviewer','Admin'];
 var ctxOpts=null;
 
