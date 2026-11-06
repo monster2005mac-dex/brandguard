@@ -100,7 +100,9 @@ function listen(){
     function once(k){if(!got[k]){got[k]=1;if(--need===0)res();}}
     function fail(k){return function(e){S.note='Firestore: '+(e&&e.message||e);console.error(e);once(k);emit();};}
     db.collection('brand').doc('rules').onSnapshot(function(snap){if(snap.exists)shared.rules=snap.data();once('r');emit();},fail('r'));
-    db.collection('docs').onSnapshot(function(snap){
+    var docsQuery=db.collection('docs');
+    if(S.user.role==='Creator')docsQuery=docsQuery.where('owner','==',S.user.uid);
+    docsQuery.onSnapshot(function(snap){
       shared.docs=snap.docs.map(function(d){return d.data();}).sort(function(a,b){return a.versions[0].at<b.versions[0].at?-1:1;});
       once('d');emit();
     },fail('d'));

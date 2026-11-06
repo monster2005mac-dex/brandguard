@@ -37,7 +37,8 @@ service cloud.firestore {
     // Only Reviewer or Admin can move a document to Approved or Changes requested.
     match /docs/{docId} {
       allow read: if signedIn() && (
-        resource.data.owner == request.auth.uid || isReviewer()
+        resource.data.owner == request.auth.uid
+        || isReviewer()
       );
       allow create: if signedIn()
         && request.resource.data.owner == request.auth.uid;
