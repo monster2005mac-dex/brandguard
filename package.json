@@ -10,6 +10,6 @@
     "firebase-admin": "^13.5.0"
   },
   "engines": {
-    "node": "20.x"
+    "node": "26.x"
   }
 }
