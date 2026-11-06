@@ -72,7 +72,9 @@ function userCard(u){
 }
 function buildNav(page){
   var inReview=BG.store.visibleDocs().filter(function(d){return d.status==='In review';}).length;
-  return NAV.map(function(n){
+  var role=BG.store.user&&BG.store.user.role;
+  var allowed=role==='Creator'?['review','workflow']:role==='Reviewer'?['workflow','insights','about']:role==='Admin'?['rules','workflow','insights','about']:NAV.map(function(n){return n[0];});
+  return NAV.filter(function(n){return allowed.indexOf(n[0])>=0;}).map(function(n){
     return '<a class="navitem" href="'+n[2]+'"'+(n[0]===page?' aria-current="page"':'')+'>'+svg(n[0])+'<span>'+n[1]+'</span>'+(n[0]==='workflow'&&inReview?'<span class="count">'+inReview+'</span>':'')+'</a>';
   }).join('');
 }
@@ -82,7 +84,7 @@ function paintChrome(){
   document.getElementById('usercard').innerHTML=userCard(u);
   var mu=document.getElementById('mobileUser');
   if(mu)mu.innerHTML=BG.store.mode==='firebase'
-    ?'<span class="top-user"><span>'+esc(u.name||'User')+'</span><small>'+esc(u.email||'')+' · '+esc(u.role||'')+'</small></span>'
+    ?'<button class="top-user" type="button" data-ui="profile"><span>'+esc(u.name||'User')+'</span><small>'+esc(u.email||'')+' · '+esc(u.role||'')+'</small></button>'
     :'<select id="roleSelM" aria-label="Acting as">'+ROLES.map(function(r){return '<option'+(r===u.role?' selected':'')+'>'+r+'</option>';}).join('')+'</select>';
   var bm=document.getElementById('modeBadge');
   bm.textContent=BG.store.mode==='firebase'?'Live: Firebase':'Local demo';
@@ -100,7 +102,7 @@ BG.shell={
       if(!user){location.replace('login.html');return;}
       document.body.innerHTML=
         '<div class="app">'+
-          '<aside class="rail"><a class="logo" href="index.html">'+svg('shield')+'BrandGuard</a><nav class="navlist" id="navlist" aria-label="App"></nav><div class="usercard" id="usercard"></div></aside>'+
+          '<aside class="rail"><a class="logo" href="index.html">'+svg('shield')+'BrandGuard</a><nav class="navlist" id="navlist" aria-label="Primary navigation"></nav><div class="usercard" id="usercard"></div></aside>'+
           '<div class="main">'+
             '<header class="topbar"><div><h1>'+esc(opts.title)+'</h1><div class="sub">'+esc(opts.sub||'')+'</div></div>'+
               '<div class="right"><span id="mobileUser" class="mobile-user"></span><button class="top-profile" type="button" data-ui="profile">'+(user.photo?'<img class="top-profile-avatar" src="'+esc(user.photo)+'" alt="">':'<span class="top-profile-avatar">'+esc((user.name||'?').charAt(0).toUpperCase())+'</span>')+'<span><b>'+esc(user.name||'User')+'</b><small>'+esc(user.role||'')+'</small></span></button><span id="modeBadge" class="badge-mode"></span><span id="topActions"></span></div></header>'+

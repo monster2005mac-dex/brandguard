@@ -244,6 +244,9 @@ document.addEventListener('change',function(ev){
 sh.start({
   page:'review',title:'Review',sub:'Check a draft against the approved brand rules. Every finding cites its source.',
   onReady:function(){
+    var role=S.user&&S.user.role;
+    if(role==='Admin'){location.replace('rules.html');return;}
+    if(role==='Reviewer'){location.replace('workflow.html');return;}
     ss=BG.session.load();
     var pend=null;try{pend=sessionStorage.getItem('bg.openDoc');sessionStorage.removeItem('bg.openDoc');}catch(e){}
     if(pend){var d=S.visibleDocs().find(function(x){return x.id===pend;});if(d){var v=d.versions[d.versions.length-1];ss={docId:d.id,title:d.title,type:d.type,intent:d.intent||'',text:v.text,ai:[],disputed:{},resolved:[],aiMeta:null};}}
