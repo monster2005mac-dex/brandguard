@@ -26,7 +26,7 @@ service cloud.firestore {
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['role'])
           && request.resource.data.role in ['Creator', 'Reviewer', 'Admin'])
       );
-      allow delete: if false;
+      allow delete: if isAdmin();
     }
 
     // ---------- Brand rules ----------

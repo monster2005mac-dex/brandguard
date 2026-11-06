@@ -41,15 +41,22 @@ S.subscribe=function(fn){subs.push(fn);};
 S.visibleDocs=function(){
   if(!S.user)return [];
   var role=S.user.role;
-  if(role==='Reviewer'||role==='Admin')return shared.docs.filter(function(d){return !d.sample;});
-  return shared.docs.filter(function(d){return !d.sample&&d.owner===S.user.uid;});
+  return shared.docs.filter(function(d){return !isLegacySample(d)&&(role==='Reviewer'||role==='Admin'||d.owner===S.user.uid);});
 };
+
+function isLegacySample(d){
+  return !!(d&&(
+    d.sample ||
+    /^d-s[123]$/.test(d.id||'') ||
+    /^(Festive offer email|Launch announcement post|Webinar invite)$/i.test(d.title||'')
+  ));
+}
 
 /* ---------- local backend ---------- */
 function initLocal(){
   shared=readLS(LS_SHARED)||E.seedAll();
   if(!shared.rules||!shared.docs||!shared.events)shared=E.seedAll();
-  shared.docs=(shared.docs||[]).filter(function(d){return !d.sample;});
+  shared.docs=(shared.docs||[]).filter(function(d){return !isLegacySample(d);});
   S.user=readLS(LS_USER);
   window.addEventListener('storage',function(ev){
     if(ev.key===LS_SHARED){var n=readLS(LS_SHARED);if(n){shared=n;emit();}}
@@ -128,8 +135,15 @@ function listen(){
     if(S.user.role==='Creator')docsQuery=docsQuery.where('owner','==',S.user.uid);
     docsQuery.onSnapshot(function(snap){
       shared.docs=snap.docs.map(function(d){var item=d.data();item.id=item.id||d.id;return item;})
-        .filter(function(d){return !d.sample;})
+        .filter(function(d){return !isLegacySample(d);})
         .sort(function(a,b){return a.versions[0].at<b.versions[0].at?-1:1;});
+      if(S.user.role==='Admin')snap.docs.forEach(function(docSnap){
+        var data=docSnap.data();
+        data.id=data.id||docSnap.id;
+        if(isLegacySample(data)){
+          db.collection('docs').doc(docSnap.id).delete().catch(function(e){console.error(e);});
+        }
+      });
       once('d');emit();
     },fail('d'));
     db.collection('events').onSnapshot(function(snap){
