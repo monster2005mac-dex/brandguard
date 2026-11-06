@@ -41,14 +41,15 @@ S.subscribe=function(fn){subs.push(fn);};
 S.visibleDocs=function(){
   if(!S.user)return [];
   var role=S.user.role;
-  if(role==='Reviewer'||role==='Admin')return shared.docs.slice();
-  return shared.docs.filter(function(d){return d.owner===S.user.uid;});
+  if(role==='Reviewer'||role==='Admin')return shared.docs.filter(function(d){return !d.sample;});
+  return shared.docs.filter(function(d){return !d.sample&&d.owner===S.user.uid;});
 };
 
 /* ---------- local backend ---------- */
 function initLocal(){
   shared=readLS(LS_SHARED)||E.seedAll();
   if(!shared.rules||!shared.docs||!shared.events)shared=E.seedAll();
+  shared.docs=(shared.docs||[]).filter(function(d){return !d.sample;});
   S.user=readLS(LS_USER);
   window.addEventListener('storage',function(ev){
     if(ev.key===LS_SHARED){var n=readLS(LS_SHARED);if(n){shared=n;emit();}}
@@ -126,7 +127,9 @@ function listen(){
     var docsQuery=db.collection('docs');
     if(S.user.role==='Creator')docsQuery=docsQuery.where('owner','==',S.user.uid);
     docsQuery.onSnapshot(function(snap){
-      shared.docs=snap.docs.map(function(d){return d.data();}).sort(function(a,b){return a.versions[0].at<b.versions[0].at?-1:1;});
+      shared.docs=snap.docs.map(function(d){var item=d.data();item.id=item.id||d.id;return item;})
+        .filter(function(d){return !d.sample;})
+        .sort(function(a,b){return a.versions[0].at<b.versions[0].at?-1:1;});
       once('d');emit();
     },fail('d'));
     db.collection('events').onSnapshot(function(snap){

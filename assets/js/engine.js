@@ -77,21 +77,7 @@ function seedEvents(){
   return e;
 }
 function seedDocs(){
-  var t=function(n){return new Date(NOW.getTime()-n*36e5).toISOString();};
-  return [
-    {id:'d-s1',sample:true,title:'Festive offer email',type:'Email',status:'In review',
-     versions:[{n:1,text:'Join Northwind Learn this festive season. Our AI Coach and 120 courses help every learner build a skill at an affordable ₹499 per month. No-brainer! Start today.',at:t(20),by:'Creator',summary:{high:0,disputed:1,resolved:3,openList:[],disputedList:[{ruleId:'G-01',quote:'No-brainer',reason:'Festive campaign voice.'}]}}],
-     comments:[{by:'Creator',text:'Disputed the slang flag. This is the campaign tagline.',at:t(19)}],
-     audit:[{at:t(21),who:'Creator',what:'Saved version 1'},{at:t(20),who:'Creator',what:'Submitted version 1 for approval'}]},
-    {id:'d-s2',sample:true,title:'Launch announcement post',type:'LinkedIn post',status:'Approved',
-     versions:[{n:1,text:'Northwind Learn now offers 120 courses with an AI Coach for every learner.',at:t(70),by:'Creator',summary:{high:0,disputed:0,resolved:2,openList:[],disputedList:[]}}],
-     comments:[{by:'Reviewer',text:'Facts match F-03. Approved.',at:t(48)}],
-     audit:[{at:t(72),who:'Creator',what:'Saved version 1'},{at:t(70),who:'Creator',what:'Submitted version 1 for approval'},{at:t(48),who:'Reviewer',what:'Approved version 1'}]},
-    {id:'d-s3',sample:true,title:'Webinar invite',type:'Email',status:'Changes requested',
-     versions:[{n:1,text:'Join our free webinar. Our students call it clinically proven to boost marks.',at:t(30),by:'Creator',summary:{high:1,disputed:0,resolved:0,openList:[{ruleId:'C-02',severity:'high',quote:'clinically proven'}],disputedList:[]}}],
-     comments:[{by:'Reviewer',text:'No study on file for "clinically proven". Please remove or attach evidence.',at:t(26)}],
-     audit:[{at:t(31),who:'Creator',what:'Saved version 1'},{at:t(30),who:'Creator',what:'Submitted version 1 for approval'},{at:t(26),who:'Reviewer',what:'Requested changes on version 1'}]}
-  ];
+  return [];
 }
 function seedAll(){return {rules:seedRules(),docs:seedDocs(),events:seedEvents()};}
 function freshSession(){return {docId:null,title:'Northwind Learn launch post',type:'LinkedIn post',intent:'Announce our expanded course catalogue in a warm, credible way.',text:SAMPLE_DRAFT,ai:[],disputed:{},resolved:[],aiMeta:null};}
