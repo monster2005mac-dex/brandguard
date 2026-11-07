@@ -106,8 +106,7 @@ function render(){
       '<div class="row"><button class="btn sm" data-act="import">Import text / DOCX / PDF</button><input type="file" id="importFile" accept=".txt,.md,.docx,.pdf,text/plain" hidden>'+
         '<button class="btn sm ghost" data-act="commentSelection"'+(canEdit?'':' disabled')+'>Comment on selected text</button></div>'+
       '<div class="row"><button class="btn primary" data-act="run">Run review</button>'+
-        (BG.ai.available?'<button class="btn" data-act="ai"'+(U.aiBusy?' disabled':'')+'>'+(U.aiBusy?'Gemini is reading…':'Deep check with Gemini')+'</button>':'')+
-        '<button class="btn ghost" data-act="sample"'+(c.edit?'':' disabled')+'>Load sample draft</button></div>'+
+        (BG.ai.available?'<button class="btn" data-act="ai"'+(U.aiBusy?' disabled':'')+'>'+(U.aiBusy?'Gemini is reading…':'Deep check with Gemini')+'</button>':'')+'</div>'+
       '<div class="small muted" id="aiMsg">'+esc(U.aiMsg||(BG.ai.available?'Rule checks run live as you type. The deep check catches tone and meaning that keywords miss.':'Rule checks run live as you type.'))+'</div>'+
       '<div><div class="sec">Marked-up draft</div><div class="marked" id="marked">'+markedHtml()+'</div></div>'+
       '<div class="row" style="border-top:1px solid var(--line);padding-top:14px"><button class="btn" data-act="save"'+(canEdit?'':' disabled')+'>Save version</button>'+
@@ -183,7 +182,6 @@ document.addEventListener('click',function(ev){
   if(a==='filter'){U.filter=el.dataset.k;$('findings').innerHTML=findingsHtml();return;}
   if(a==='run'){clearTimeout(U.timer);U.timer=null;recompute();U.aiMsg='';persist();render();var n=sumry().open.length;UI.toast(n?E.plural(n,'open finding')+' to look at.':'No open findings.');return;}
   if(a==='ai'){runAI();return;}
-  if(a==='sample'){ss=E.freshSession();U.open=null;U.aiMsg='';recompute();persist();render();UI.toast('Sample draft loaded.');return;}
   if(a==='import'){ $('importFile').click();return;}
   if(a==='commentSelection'){
     var box=$('draft'),start=box.selectionStart,end=box.selectionEnd,quote=ss.text.slice(start,end).trim();

@@ -55,7 +55,19 @@ var UI=BG.ui={
 /* ---------- per-user draft in progress ---------- */
 BG.session={
   key:function(){return 'bg.session.v3.'+((BG.store.user&&BG.store.user.uid)||'anon');},
-  load:function(){try{var r=localStorage.getItem(this.key());if(r){var s=JSON.parse(r);if(s&&typeof s.text==='string')return s;}}catch(e){}return E.freshSession();},
+  load:function(){
+    try{
+      var r=localStorage.getItem(this.key());
+      if(r){
+        var s=JSON.parse(r);
+        var combined=((s.title||'')+'\n'+(s.text||'')).toLowerCase();
+        if(s&&typeof s.text==='string'&&!/northwind|festive offer email|launch announcement post|webinar invite/.test(combined))return s;
+      }
+    }catch(e){}
+    var fresh=E.freshSession();
+    this.save(fresh);
+    return fresh;
+  },
   save:function(s){try{localStorage.setItem(this.key(),JSON.stringify(s));}catch(e){}}
 };
 
