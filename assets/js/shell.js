@@ -55,6 +55,9 @@ var UI=BG.ui={
 /* ---------- per-user draft in progress ---------- */
 BG.session={
   key:function(){return 'bg.session.v3.'+((BG.store.user&&BG.store.user.uid)||'anon');},
+  clear:function(){
+    try{localStorage.removeItem(this.key());}catch(e){}
+  },
   load:function(){
     try{
       var r=localStorage.getItem(this.key());

@@ -130,7 +130,7 @@ function resolveWith(f,rep,outcome){
 }
 function flushPending(){if(U.timer){clearTimeout(U.timer);U.timer=null;recompute();render();return true;}return false;}
 function addAudit(d,who,what){d.audit.push({at:new Date().toISOString(),who:who,what:what});}
-function saveVersion(){
+function saveVersion(skipSave){
   if(!ss.title.trim()){UI.toast('Add a title first.');return null;}
   if(!ss.text.trim()){UI.toast('The draft is empty.');return null;}
   recompute();var sm=sumry(),role=S.user.role;
@@ -144,7 +144,11 @@ function saveVersion(){
   d.versions.push({n:n,text:ss.text,at:new Date().toISOString(),by:role,summary:summary});
   addAudit(d,role,'Saved version '+n);
   if(d.status==='Approved'||d.status==='Changes requested'){addAudit(d,'System','Status reset to Draft because the content changed. It needs review again.');d.status='Draft';}
-  S.saveDoc(d);persist();return d;
+  if(!skipSave){
+    var save=S.saveDoc(d);
+    if(save&&save.catch)save.catch(function(e){console.error('Draft save failed:',e);});
+  }
+  persist();return d;
 }
 function runAI(){
   if(!ss.text.trim()||U.aiBusy)return;
@@ -214,10 +218,17 @@ document.addEventListener('click',function(ev){
   if(a==='submit'){
     recompute();var sm=sumry();
     if(sm.high.length){UI.toast('Fix or dispute the '+E.plural(sm.high.length,'high-severity finding')+' first.');return;}
-    var d2=saveVersion();if(!d2)return;
+    var d2=saveVersion(true);if(!d2)return;
     d2.status='In review';addAudit(d2,S.user.role,'Submitted version '+d2.versions.length+' for approval');
-    S.saveDoc(d2);try{sessionStorage.setItem('bg.selDoc',d2.id);}catch(e){}
-    location.href='workflow.html';return;}
+    S.saveDoc(d2).then(function(){
+      BG.session.clear();
+      ss=E.freshSession();
+      try{sessionStorage.setItem('bg.selDoc',d2.id);}catch(e){}
+      location.href='workflow.html';
+    }).catch(function(e){
+      UI.toast('Submission failed: '+(e&&e.message||'Please try again.'));
+    });
+    return;}
 });
 document.addEventListener('input',function(ev){
   var t=ev.target;if(!ss)return;

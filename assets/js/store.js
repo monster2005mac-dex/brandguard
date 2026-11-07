@@ -227,7 +227,7 @@ S.removeSampleEvents=function(ruleId){
   shared.events=shared.events.filter(function(e){return !(e.ruleId===ruleId&&e.sample);});emit();
   if(S.mode==='local')persistLocal();
 };
-S._err=function(e){S.note='Save failed: '+(e&&e.message||e);console.error(e);emit();};
+S._err=function(e){S.note='Save failed: '+(e&&e.message||e);console.error(e);emit();throw e;};
 S.resetDemo=function(){
   if(S.mode==='firebase'){S.note='Reset is only available in local demo mode.';emit();return Promise.resolve();}
   shared=E.seedAll();persistLocal();emit();return Promise.resolve();
