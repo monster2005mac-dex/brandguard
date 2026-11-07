@@ -73,7 +73,8 @@ service cloud.firestore {
       allow create: if signedIn()
         && request.resource.data.keys().hasAll(['ruleId', 'outcome', 'at'])
         && request.resource.data.outcome in ['accepted', 'edited', 'disputed'];
-      allow update, delete: if false;
+      allow delete: if isAdmin();
+      allow update: if false;
     }
   }
 }

@@ -52,8 +52,7 @@ function setupPanel(){
   var empty=!R.terms.length&&!R.facts.length;
   return '<section class="panel"><div class="row" style="justify-content:space-between;align-items:flex-start"><div><h2>'+(empty?'Set up your brand pack':'Brand pack')+'</h2><p class="small muted" style="max-width:62ch">'+(empty?'Your workspace has the generic checks (tone, absolute claims, readability, accessibility) and no company-specific terms or facts yet. Upload your brand guidelines and Gemini will draft the rules for you to review, or add them by hand.':'Upload an updated guidelines document to add more rules, or edit the lists below.')+'</p></div>'+
     '<div class="row"><button class="btn primary" data-act="importDoc"'+(BG.ai.available?'':' title="Needs the AI engine"')+'>Import from guidelines document</button><input type="file" id="guideFile" accept=".pdf,.docx,.txt,.md" hidden></div></div>'+
-    '<div class="row" style="margin-top:12px"><label class="small muted" for="companyName">Company name</label><input type="text" id="companyName" value="'+esc(R.company)+'" style="flex:1 1 220px;max-width:340px"><button class="btn sm" data-act="saveCompany">Save</button>'+
-    (S.mode==='firebase'?'<button class="btn sm ghost" data-act="loadSample" title="Replaces the brand pack with the fictional Northwind Learn demo brand">Load sample brand pack</button>':'')+'</div></section>';
+    '<div class="row" style="margin-top:12px"><label class="small muted" for="companyName">Company name</label><input type="text" id="companyName" value="'+esc(R.company)+'" style="flex:1 1 220px;max-width:340px"><button class="btn sm" data-act="saveCompany">Save</button></div></section>';
 }
 function previewImport(p,name){
   var cnt=function(n,w){return '<li><b>'+n+'</b> '+w+'</li>';};
@@ -115,7 +114,6 @@ document.addEventListener('click',function(ev){
   if(a==='aiKeySave'){var k=v('geminiKey');if(!k){UI.toast('Enter a key.');return;}UI.closeModal();BG.ai.setLocalKey(k).then(function(){render();UI.toast('Key saved on this device.');});return;}
   if(a==='aiKeyClear'){BG.ai.setLocalKey('').then(function(){render();UI.toast('Personal key removed.');});return;}
   if(a==='saveCompany'){var nm=v('companyName');if(!nm){UI.toast('Enter a company name.');return;}R.company=nm;save();UI.toast('Company name saved.');return;}
-  if(a==='loadSample'){if(window.confirm('Replace the current brand pack with the fictional Northwind Learn demo pack?'))S.loadSamplePack().then(function(){UI.toast('Sample brand pack loaded.');});return;}
   if(a==='importDoc'){
     if(!BG.ai.available){UI.toast('Set up the AI engine first (server key or a personal key).');return;}
     $('guideFile').click();return;}

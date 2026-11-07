@@ -56,7 +56,10 @@ function isLegacySample(d){
 function initLocal(){
   shared=readLS(LS_SHARED)||E.seedAll();
   if(!shared.rules||!shared.docs||!shared.events)shared=E.seedAll();
+  if(/Northwind|fictional demo/i.test(shared.rules.company||''))shared=E.seedAll();
   shared.docs=(shared.docs||[]).filter(function(d){return !isLegacySample(d);});
+  shared.events=(shared.events||[]).filter(function(e){return !e.sample;});
+  persistLocal();
   S.user=readLS(LS_USER);
   window.addEventListener('storage',function(ev){
     if(ev.key===LS_SHARED){var n=readLS(LS_SHARED);if(n){shared=n;emit();}}
@@ -147,7 +150,14 @@ function listen(){
       once('d');emit();
     },fail('d'));
     db.collection('events').onSnapshot(function(snap){
-      shared.events=snap.docs.map(function(d){return d.data();}).sort(function(a,b){return a.at<b.at?-1:1;});
+      shared.events=snap.docs.map(function(d){return d.data();})
+        .filter(function(e){return !e.sample;})
+        .sort(function(a,b){return a.at<b.at?-1:1;});
+      if(S.user.role==='Admin')snap.docs.forEach(function(eventSnap){
+        if(eventSnap.data().sample){
+          db.collection('events').doc(eventSnap.id).delete().catch(function(e){console.error(e);});
+        }
+      });
       once('e');emit();
     },fail('e'));
     db.collection('users').doc(S.user.uid).onSnapshot(function(snap){
@@ -219,10 +229,6 @@ S.setUserRole=function(uid,role){
     if(admins<2){S.note='You are the only Admin. Make someone else an Admin before changing your own role.';emit();return Promise.resolve();}
   }
   return db.collection('users').doc(uid).update({role:role}).catch(S._err);
-};
-/* Replace the brand pack with the fictional Northwind demo brand (Admin only). Docs and events are left alone. */
-S.loadSamplePack=function(){
-  var r=E.seedRules();return S.saveRules(r);
 };
 S.signIn=function(email,pw){return auth.signInWithEmailAndPassword(email,pw);};
 S.signUp=function(email,pw,name){

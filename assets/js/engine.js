@@ -18,34 +18,15 @@ function plural(n,w){return n+' '+w+(n===1?'':'s');}
 function clone(x){return JSON.parse(JSON.stringify(x));}
 
 /* ---------- fictional brand pack ---------- */
-var SAMPLE_DRAFT=
-"We are India's #1 learning platform and we guarantee 100% results! Over 52,000 learners already study with us, and students love our chatbot. Pick from 150 courses at a super cheap price of just ₹299 a month. Gonna be the best decision you make this year!!!\n\n"+
-"Click here: https://northwind.example/join\n\n"+
-"<img src=\"team-photo.jpg\">";
+var SAMPLE_DRAFT='';
 
 function seedRules(){
   return {
-    company:'Northwind Learn (fictional demo brand)',
-    guidelines:[
-      {id:'G-01',title:'Warm, professional tone',text:'Write in a warm, professional voice. No slang or intensifiers like "super". At most one exclamation mark per post.',check:'tone',category:'Tone'},
-      {id:'G-02',title:'No guaranteed outcomes',text:'Never promise guaranteed, risk-free or 100% outcomes.',check:'absolutes',category:'Claims'},
-      {id:'G-03',title:'Plain sentences',text:'Keep sentences under 25 words so they are easy to read.',check:'readability',category:'Readability'},
-      {id:'G-04',title:'Accessible media and links',text:'Every image needs alt text. Link text must say where the link goes, never "click here".',check:'a11y',category:'Accessibility'}
-    ],
-    terms:[
-      {id:'T-01',avoid:'student(s)',pattern:'student(s?)',good:'learner$1',text:'Say "learner", not "student".'},
-      {id:'T-02',avoid:'cheap',pattern:'cheap',good:'affordable',text:'Say "affordable", not "cheap".'},
-      {id:'T-03',avoid:'chatbot',pattern:'chatbot',good:'AI Coach',text:'Our tutoring assistant is called "AI Coach", not "chatbot".'}
-    ],
-    facts:[
-      {id:'F-01',subject:'Learner count',value:'48,000',display:'48,000 learners',pattern:'(\\d[\\d,]*)\\+?\\s+learners',owner:'Growth team',expires:'2027-03-31'},
-      {id:'F-02',subject:'Monthly price',value:'499',display:'₹499 per month',pattern:'₹\\s?(\\d[\\d,]*)',owner:'Finance',expires:'2026-09-30'},
-      {id:'F-03',subject:'Course count',value:'120',display:'120 courses',pattern:'(\\d[\\d,]*)\\+?\\s+courses',owner:'Content team',expires:isoPlus(20)}
-    ],
-    claims:[
-      {id:'C-01',label:'Market ranking',pattern:"(?:india['’]s\\s+)?(?:#\\s?1|no\\.\\s?1|number\\s+one)|best\\s+in\\s+india|market\\s+leader",evidence:'',fix:'a trusted',text:'Ranking claims need third-party evidence on file and a reviewer sign-off.'},
-      {id:'C-02',label:'Proven results',pattern:'clinically\\s+proven|scientifically\\s+proven|proven\\s+to',evidence:'',fix:'designed around learning research to',text:'"Proven" claims need a cited study on file.'}
-    ]
+    company:'Your company',
+    guidelines:[],
+    terms:[],
+    facts:[],
+    claims:[]
   };
 }
 /* A real workspace starts from this: the generic exact checks, no invented company facts.
@@ -59,28 +40,13 @@ function templateRules(company){
 }
 function brandName(R){return String((R&&R.company)||'our brand').replace(/\s*\(.*?\)\s*/g,' ').trim()||'our brand';}
 function seedEvents(){
-  var d=function(n){return new Date(NOW.getTime()-n*864e5).toISOString();};
-  var e=[];
-  function add(rule,cat,outcome,n,reason){e.push({ruleId:rule,category:cat,outcome:outcome,at:d(n),reason:reason||'',sample:true});}
-  add('G-01','Tone','disputed',9,'Slang is part of our festive campaign voice.');
-  add('G-01','Tone','disputed',7,'"Super" is how our learners talk. Unclear if it is banned.');
-  add('G-01','Tone','disputed',5,'Is a single exclamation mark in a headline allowed?');
-  add('G-01','Tone','accepted',4);
-  add('G-03','Readability','disputed',8,'Legal disclaimer sentences are long by design.');
-  add('G-03','Readability','disputed',6,'Course titles count as one long sentence.');
-  add('G-03','Readability','accepted',3);
-  add('G-02','Claims','accepted',10);add('G-02','Claims','accepted',8);add('G-02','Claims','accepted',2);add('G-02','Claims','disputed',1,'Refund policy wording says "guaranteed refund".');
-  add('T-01','Terminology','accepted',12);add('T-01','Terminology','accepted',9);add('T-01','Terminology','accepted',6);add('T-01','Terminology','accepted',2);
-  add('C-01','Claims','accepted',7);add('C-01','Claims','accepted',3);add('C-01','Claims','accepted',1);
-  add('F-02','Facts','accepted',5);add('F-02','Facts','accepted',2);
-  add('G-04','Accessibility','accepted',6);add('G-04','Accessibility','accepted',4);
-  return e;
+  return [];
 }
 function seedDocs(){
   return [];
 }
 function seedAll(){return {rules:seedRules(),docs:seedDocs(),events:seedEvents()};}
-function freshSession(){return {docId:null,title:'Northwind Learn launch post',type:'LinkedIn post',intent:'Announce our expanded course catalogue in a warm, credible way.',text:SAMPLE_DRAFT,ai:[],disputed:{},resolved:[],aiMeta:null};}
+function freshSession(){return {docId:null,title:'Untitled draft',type:'LinkedIn post',intent:'',text:SAMPLE_DRAFT,ai:[],disputed:{},resolved:[],aiMeta:null};}
 
 /* ---------- rule catalogue (what a finding can cite) ---------- */
 function factStatus(f){return f.expires<TODAY?'expired':(f.expires<=isoPlus(30)?'soon':'current');}
