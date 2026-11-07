@@ -16,6 +16,20 @@ var HINT='bg.hint';
 var shared=null,subs=[],auth=null,db=null,fbReady=false;
 var S=BG.store={mode:wantFirebase?'firebase':'local',user:null,note:'',ready:null};
 
+function clearLegacyLocalData(){
+  var CLEANUP='bg.production-clean.v1';
+  try{if(localStorage.getItem(CLEANUP))return;}catch(e){}
+  try{
+    Object.keys(localStorage).forEach(function(k){
+      if(k==='bg.shared.v3'||k==='bg.user.v3'||k==='bg.hint'||k==='fake.db'||k==='fake.auth'||k==='fake.accts'||k.indexOf('bg.session.v3.')===0){
+        localStorage.removeItem(k);
+      }
+    });
+    localStorage.setItem(CLEANUP,'1');
+  }catch(e){}
+}
+clearLegacyLocalData();
+
 /* Small, non-secret copy of who is signed in. Lets the landing page and the app show the right
    state instantly, before Firebase has finished starting. It is only a hint: Firebase Auth stays the authority. */
 function homeFor(role){return role==='Admin'?'rules.html':'workflow.html';}
@@ -48,6 +62,7 @@ function isLegacySample(d){
   return !!(d&&(
     d.sample ||
     /^d-s[123]$/.test(d.id||'') ||
+    /Northwind/i.test((d.title||'')+' '+((d.versions&&d.versions[0]&&d.versions[0].text)||'')) ||
     /^(Festive offer email|Launch announcement post|Webinar invite)$/i.test(d.title||'')
   ));
 }
@@ -133,7 +148,17 @@ function listen(){
     var got={},need=3;
     function once(k){if(!got[k]){got[k]=1;if(--need===0)res();}}
     function fail(k){return function(e){S.note='Firestore: '+(e&&e.message||e);console.error(e);once(k);emit();};}
-    db.collection('brand').doc('rules').onSnapshot(function(snap){if(snap.exists)shared.rules=snap.data();once('r');emit();},fail('r'));
+    db.collection('brand').doc('rules').onSnapshot(function(snap){
+      if(snap.exists){
+        var rules=snap.data();
+        if(S.user.role==='Admin'&&(/Northwind|fictional demo/i.test(rules.company||'')||(Array.isArray(rules.docs)&&rules.docs.some(function(d){return d.sample;})))){
+          rules=E.templateRules(S.user.name+"'s company");
+          db.collection('brand').doc('rules').set(clean(rules)).catch(S._err);
+        }
+        shared.rules=rules;
+      }
+      once('r');emit();
+    },fail('r'));
     var docsQuery=db.collection('docs');
     if(S.user.role==='Creator')docsQuery=docsQuery.where('owner','==',S.user.uid);
     docsQuery.onSnapshot(function(snap){
@@ -242,7 +267,9 @@ S.google=function(){
 };
 S.signOut=function(){
   try{localStorage.removeItem(HINT);}catch(e){}
+  var uid=S.user&&S.user.uid;
   S.user=null;
+  try{if(uid)localStorage.removeItem('bg.session.v3.'+uid);}catch(e){}
   if(S.mode==='firebase'&&auth)return auth.signOut();
   try{localStorage.removeItem(LS_USER);}catch(e){}
   return Promise.resolve();

@@ -31,11 +31,9 @@ function render(){
   var stale=S.rules.facts.filter(function(f){return E.factStatus(f)!=='current';});
   var gaps=rows.filter(function(r){return r.gap;});
   var catalog=E.allRules(S.rules);
-  var reliability=E.reliability();
   $('page').innerHTML='<div class="stack">'+
-   '<div class="note">Built from every Accept, Edit and Dispute.'+(ev.some(function(e){return e.sample;})?' The first '+ev.filter(function(e){return e.sample;}).length+' events are sample history so the screens are not empty.':'')+'</div>'+
+   '<div class="note">Built from every Accept, Edit and Dispute.</div>'+
    '<div class="kpis"><div class="kpi"><b>'+tot+'</b><span>findings resolved</span></div><div class="kpi"><b>'+(tot?Math.round((tot-disp)/tot*100):0)+'%</b><span>fixed by the creator</span></div><div class="kpi"><b>'+(tot?Math.round(disp/tot*100):0)+'%</b><span>disputed</span></div><div class="kpi"><b>'+stale.length+'</b><span>facts expired or expiring</span></div></div>'+
-   '<section class="panel"><h2 style="margin-bottom:10px">Reliability on the demo test set</h2><div class="row"><span class="pill ok">'+reliability.tests+' labelled checks</span><span class="pill brand">'+Math.round(reliability.precision*100)+'% precision</span><span class="pill brand">'+Math.round(reliability.recall*100)+'% recall</span><span class="pill neutral">'+Math.round(reliability.accuracy*100)+'% accuracy</span></div><p class="small muted" style="margin-top:8px">Measured locally against the fictional brand pack. These figures demonstrate the test harness, not the accuracy of Gemini or a production-trained model.</p></section>'+
    '<div class="grid2" style="margin-top:0"><section class="panel chart"><h2 style="margin-bottom:4px">Activity, last 14 days</h2><p class="small muted" style="margin-bottom:8px">Findings resolved per day. The dashed line shows disputes.</p>'+trendSvg(ev)+'</section>'+
    '<section class="panel"><h2 style="margin-bottom:12px">Recurring mistakes by category</h2><div class="bars">'+
      (catRows.length?catRows.map(function(k){return '<div class="bar-row"><span>'+esc(k)+'</span><div class="track"><div class="fill" style="width:'+Math.round(cats[k]/max*100)+'%"></div></div><span class="mono">'+cats[k]+'</span></div>';}).join(''):'<div class="empty">No history yet.</div>')+'</div></section></div>'+

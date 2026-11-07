@@ -35,7 +35,7 @@ service cloud.firestore {
     match /brand/{id} {
       allow read: if signedIn();
       allow create, update: if isAdmin();
-      allow delete: if false;
+      allow delete: if isAdmin();
     }
 
     // ---------- Documents ----------
@@ -63,7 +63,7 @@ service cloud.firestore {
           || (isReviewer() && resource.data.owner == request.auth.uid
               && request.resource.data.status in ['Draft', 'In review'])
         );
-      allow delete: if false;
+      allow delete: if isAdmin();
     }
 
     // ---------- Events ----------

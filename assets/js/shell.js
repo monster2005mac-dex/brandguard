@@ -150,7 +150,7 @@ BG.shell={
             '<div id="note" class="banner" hidden></div>'+
             '<div class="content" id="page"></div>'+
             '<footer class="appfoot"><div><b>AI use disclosure.</b> Rule checks run in your browser. The optional Gemini deep check sends the draft and the rule list to Google. Gemini never edits or approves anything: a person accepts, edits or disputes every finding.</div>'+
-            '<div>Powered by Google Gemini for CodeNexus India 2026. In local demo mode the brand pack, facts and history are fictional sample data.</div></footer>'+
+            '<div>Powered by Google Gemini for CodeNexus India 2026.</div></footer>'+
           '</div>'+
         '</div>'+
         '<div class="scrim" id="scrim"></div><aside class="drawer" id="drawer" aria-label="Details"></aside><div class="modal" id="modal" role="dialog" aria-modal="true"></div><div class="toast-wrap" id="toasts" role="status" aria-live="polite"></div>';

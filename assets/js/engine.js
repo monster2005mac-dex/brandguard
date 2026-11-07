@@ -1,4 +1,4 @@
-/* BrandGuard engine: helpers, fictional brand pack, deterministic rule checks, word diff, readiness score.
+/* BrandGuard engine: helpers, brand checks, deterministic rule checks, word diff, readiness score.
    Pure functions, no DOM and no network. Exposed as BG.engine. */
 (function(){
 'use strict';
@@ -17,7 +17,7 @@ function fmt(iso){try{return new Date(iso).toLocaleString('en-IN',{dateStyle:'me
 function plural(n,w){return n+' '+w+(n===1?'':'s');}
 function clone(x){return JSON.parse(JSON.stringify(x));}
 
-/* ---------- fictional brand pack ---------- */
+/* ---------- empty production defaults ---------- */
 var SAMPLE_DRAFT='';
 
 function seedRules(){
