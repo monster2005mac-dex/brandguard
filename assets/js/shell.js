@@ -137,7 +137,7 @@ function paintChrome(){
 }
 
 BG.shell={
-  can:function(){var r=BG.store.user?BG.store.user.role:'Creator';return {edit:r!=='Reviewer',approve:r!=='Creator',admin:r==='Admin',role:r};},
+  can:function(){var r=BG.store.user?BG.store.user.role:'Creator';return {edit:r!=='Creator',approve:r!=='Creator',admin:r==='Admin',role:r};},
   refresh:function(){paintChrome();},
   start:function(opts){
     ctxOpts=opts;

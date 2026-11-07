@@ -18,6 +18,7 @@ service cloud.firestore {
       allow read: if signedIn();
       allow create: if signedIn() && request.auth.uid == uid
         && (request.resource.data.role == 'Creator'
+          || request.resource.data.role == 'Reviewer'
           || (request.resource.data.role == 'Admin' && !workspaceExists()));
       allow update: if signedIn() && (
         (request.auth.uid == uid

@@ -3,7 +3,7 @@
 'use strict';
 var BG=window.BG,E=BG.engine,esc=E.esc,S=BG.store,UI=BG.ui,sh=BG.shell;
 var $=function(id){return document.getElementById(id);};
-var sel=null;
+var sel=null,editMode=false;
 var COLS=[['Draft','Not submitted yet'],['In review','Waiting for a reviewer'],['Changes requested','Back with the creator'],['Approved','Locked and ready to publish']];
 
 function addAudit(d,who,what){d.audit.push({at:new Date().toISOString(),who:who,what:what});}
@@ -33,11 +33,12 @@ function detail(d){
     '<div><div class="row" style="justify-content:space-between"><h2 style="font-size:24px">'+esc(d.title)+'</h2>'+UI.statusPill(d.status)+'</div>'+
     '<div class="small muted" style="margin-top:4px">'+esc(d.type)+' · version '+v.n+' of '+d.versions.length+' · saved by '+esc(v.by)+' on '+E.fmt(v.at)+'</div>'+
     (d.intent?' <div class="small muted" style="margin-top:5px"><b>Creator intent:</b> '+esc(d.intent)+'</div>':'')+'</div>'+
-    '<div><div class="sec">Latest version</div><div class="marked" style="max-height:220px">'+esc(v.text)+'</div></div>'+
+    '<div><div class="sec">Latest version</div>'+((c.approve&&editMode&&d.status==='In review')?'<textarea id="reviewEditText" rows="12" style="width:100%;resize:vertical">'+esc(v.text)+'</textarea><div class="row"><button class="btn primary sm" data-act="commitEdit" data-id="'+esc(d.id)+'">Commit text edit</button><button class="btn sm" data-act="cancelEdit" data-id="'+esc(d.id)+'">Cancel</button></div>':'<div class="marked" style="max-height:220px">'+esc(v.text)+'</div></div>')+
     '<div><div class="sec">Review summary</div><div class="row"><span class="pill '+(blockers?'high':'ok')+'">'+blockers+' high open</span><span class="pill neutral">'+v.summary.disputed+' disputed</span><span class="pill ok">'+v.summary.resolved+' resolved by creator</span></div></div>'+
     (open?'<div><div class="sec">Still open at submission</div><ul class="stack" style="list-style:none;margin:0;padding:0;gap:8px">'+open+'</ul></div>':'')+
     (disp?'<div><div class="sec">Needs your decision: disputed by the creator</div><ul class="stack" style="list-style:none;margin:0;padding:0;gap:8px">'+disp+'</ul></div>':'')+
     '<div class="row" style="border-top:1px solid var(--line);padding-top:14px"><button class="btn" data-act="openReview" data-id="'+esc(d.id)+'">Open in Review</button>'+
+      (c.approve&&d.status==='In review'?'<button class="btn" data-act="editText" data-id="'+esc(d.id)+'">Edit text and commit</button>':'')+
       '<button class="btn" data-act="exportReview" data-id="'+esc(d.id)+'">Export review report</button>'+
       (d.status==='Approved'?'<button class="btn primary" data-act="copyApproved" data-id="'+esc(d.id)+'">Copy approved text</button>':'')+
       '<button class="btn primary" data-act="approve" data-id="'+esc(d.id)+'"'+(canDecide&&!blockers?'':' disabled')+'>Approve</button>'+
@@ -61,6 +62,19 @@ function find(id){return S.visibleDocs().find(function(x){return x.id===id;});}
 document.addEventListener('click',function(ev){
   var el=ev.target.closest('[data-act]');if(!el)return;
   var a=el.dataset.act,id=el.dataset.id,c=sh.can(),d=id?find(id):null;
+  if(a==='editText'&&d){editMode=true;UI.drawer(detail(d));return;}
+  if(a==='cancelEdit'&&d){editMode=false;UI.drawer(detail(d));return;}
+  if(a==='commitEdit'&&d&&c.approve&&d.status==='In review'){
+    var text=(($('reviewEditText')||{}).value||'').trim();
+    if(!text){UI.toast('The text cannot be empty.');return;}
+    var old=latest(d).text;
+    if(text===old){UI.toast('Change the text before committing.');return;}
+    var copy=JSON.parse(JSON.stringify(latest(d)));
+    copy.n=d.versions.length+1;copy.text=text;copy.at=new Date().toISOString();copy.by=c.role;
+    copy.summary=copy.summary||{high:0,disputed:0,resolved:0,openList:[],disputedList:[]};
+    d.versions.push(copy);addAudit(d,c.role,'Committed text edit as version '+copy.n);
+    S.saveDoc(d).then(function(){editMode=false;UI.drawer(detail(d));UI.toast('Text edit committed as version '+copy.n+'.');}).catch(function(e){d.versions.pop();UI.toast('Commit failed: '+(e&&e.message||'Try again.'));});
+    return;}
   if(a==='open'&&d){sel=id;UI.drawer(detail(d));return;}
   if(a==='openReview'&&d){try{sessionStorage.setItem('bg.openDoc',id);}catch(e){}location.href='review.html';return;}
   if(a==='exportReview'&&d){

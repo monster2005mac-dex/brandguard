@@ -124,10 +124,10 @@ function attach(u){
     if(d)return d;
     /* New account. The very first one (no workspace yet) becomes Admin; everyone else is a Creator.
        The security rules enforce this, so it cannot be faked from the browser. */
-    var pendingName=null;try{pendingName=sessionStorage.getItem('bg.pendingName');sessionStorage.removeItem('bg.pendingName');}catch(e){}
+    var pendingName=null,pendingRole='Creator';try{pendingName=sessionStorage.getItem('bg.pendingName');sessionStorage.removeItem('bg.pendingName');pendingRole=sessionStorage.getItem('bg.pendingRole')||'Creator';sessionStorage.removeItem('bg.pendingRole');}catch(e){}
     var rec={name:pendingName||u.displayName||(u.email||'').split('@')[0]||'User',email:u.email||'',createdAt:new Date().toISOString()};
     return db.collection('brand').doc('rules').get().then(function(r){
-      rec.role=r.exists?'Creator':'Admin';
+      rec.role=!r.exists?'Admin':(pendingRole==='Reviewer'?'Reviewer':'Creator');
       return uref.set(rec).catch(function(){rec.role='Creator';return uref.set(rec);});
     }).then(function(){return rec;});
   }).then(function(d){
@@ -256,8 +256,9 @@ S.setUserRole=function(uid,role){
   return db.collection('users').doc(uid).update({role:role}).catch(S._err);
 };
 S.signIn=function(email,pw){return auth.signInWithEmailAndPassword(email,pw);};
-S.signUp=function(email,pw,name){
+S.signUp=function(email,pw,name,role){
   try{sessionStorage.setItem('bg.pendingName',name||'');}catch(e){}
+  try{sessionStorage.setItem('bg.pendingRole',role==='Reviewer'?'Reviewer':'Creator');}catch(e){}
   return auth.createUserWithEmailAndPassword(email,pw).then(function(cred){
     return cred.user.updateProfile({displayName:name}).then(function(){return cred;});
   });

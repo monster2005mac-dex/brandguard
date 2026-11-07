@@ -77,7 +77,7 @@ try{
         (mode==='up'?'<div class="field"><label for="nm">Name</label><input type="text" id="nm" autocomplete="name"></div>':'')+
         '<div class="field"><label for="em">Email</label><input type="email" id="em" autocomplete="email" inputmode="email"></div>'+
         '<div class="field"><label for="pw">Password</label><div class="pw-wrap"><input type="password" id="pw" autocomplete="'+(mode==='in'?'current-password':'new-password')+'"><button class="pw-toggle" type="button" id="pwt" aria-label="Show password">Show</button></div>'+(mode==='in'?'<button class="linkbtn small" type="button" id="forgot">Forgot password?</button>':'')+'</div>'+
-        (mode==='up'?'<p class="small muted">The first account in a new workspace becomes its Admin. Everyone after that starts as a Creator, and the Admin can make them a Reviewer.</p>':'')+
+        (mode==='up'?'<div class="field"><label for="role">Account role</label><select id="role"><option value="Creator">Creator - writes and submits content</option><option value="Reviewer">Reviewer - reviews and approves content</option></select><div class="small muted">The first account in a new workspace becomes Admin. Review access is also assigned by an Admin.</div></div>':'')+
         '<div id="err" class="note warn" role="alert" hidden></div>'+
         '<button class="btn primary lg" type="submit" id="go">'+(mode==='in'?'Sign in':'Create account')+'</button>'+
         '<button class="btn lg" type="button" id="g">Continue with Google</button>'+
@@ -97,7 +97,8 @@ try{
     });
     document.getElementById('f').addEventListener('submit',function(ev){
       ev.preventDefault();err.hidden=true;
-      var em=document.getElementById('em').value.trim(),pw=pwi.value,rl='';
+      var em=document.getElementById('em').value.trim(),pw=pwi.value;
+      var rl=mode==='up'&&(document.getElementById('role').value==='Reviewer')?'Reviewer':'Creator';
       if(!em||!pw){fail({message:'Enter your email and password.'});return;}
       busy(true,mode==='in'?'Signing in\u2026':'Creating account\u2026');
       if(mode==='up'){var nm=(document.getElementById('nm').value||'').trim()||em.split('@')[0];S.signUp(em,pw,nm,rl).then(go).catch(fail);}
