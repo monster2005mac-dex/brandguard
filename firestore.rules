@@ -27,10 +27,7 @@ service cloud.firestore {
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['role'])
           && request.resource.data.role in ['Creator', 'Reviewer', 'Admin'])
       );
-      allow delete: if isAdmin()
-        || (signedIn()
-          && resource.data.owner == request.auth.uid
-          && resource.data.status in ['Draft', 'Changes requested']);
+      allow delete: if false;
     }
 
     // ---------- Brand rules ----------
@@ -67,7 +64,10 @@ service cloud.firestore {
           || (isReviewer() && resource.data.owner == request.auth.uid
               && request.resource.data.status in ['Draft', 'In review'])
         );
-      allow delete: if isAdmin();
+      allow delete: if isAdmin()
+        || (signedIn()
+          && resource.data.owner == request.auth.uid
+          && resource.data.status in ['Draft', 'Changes requested']);
     }
 
     // ---------- Events ----------

@@ -23,8 +23,9 @@ function board(){
 }
 
 function detail(d){
-  var c=sh.can(),v=latest(d),blockers=v.summary.high,canDecide=c.approve&&d.status==='In review',why='';
+  var c=sh.can(),v=latest(d),blockers=v.summary.high,canDecide=c.approve&&d.owner!==S.user.uid&&d.status==='In review',why='';
   if(!c.approve)why='Creators cannot approve their own work. Switch to Reviewer to decide.';
+  else if(d.owner===S.user.uid)why='You cannot approve content that you created. Ask another Reviewer.';
   else if(d.status!=='In review')why='Only content that is In review can be decided.';
   else if(blockers>0)why=E.plural(blockers,'high-severity finding')+' still open. Ask the creator to fix or dispute '+(blockers===1?'it':'them')+'.';
   var disp=v.summary.disputedList.map(function(x){return '<li><span class="chip">'+esc(x.ruleId)+'</span> <span class="quote">'+esc(x.quote)+'</span><div class="small muted">Creator says: '+esc(x.reason)+'</div></li>';}).join('');
@@ -33,12 +34,12 @@ function detail(d){
     '<div><div class="row" style="justify-content:space-between"><h2 style="font-size:24px">'+esc(d.title)+'</h2>'+UI.statusPill(d.status)+'</div>'+
     '<div class="small muted" style="margin-top:4px">'+esc(d.type)+' · version '+v.n+' of '+d.versions.length+' · saved by '+esc(v.by)+' on '+E.fmt(v.at)+'</div>'+
     (d.intent?' <div class="small muted" style="margin-top:5px"><b>Creator intent:</b> '+esc(d.intent)+'</div>':'')+'</div>'+
-    '<div><div class="sec">Latest version</div>'+((c.approve&&editMode&&d.status==='In review')?'<textarea id="reviewEditText" rows="12" style="width:100%;resize:vertical">'+esc(v.text)+'</textarea><div class="row"><button class="btn primary sm" data-act="commitEdit" data-id="'+esc(d.id)+'">Commit text edit</button><button class="btn sm" data-act="cancelEdit" data-id="'+esc(d.id)+'">Cancel</button></div>':'<div class="marked" style="max-height:220px">'+esc(v.text)+'</div></div>')+
+    '<div><div class="sec">Latest version</div>'+(    (c.approve&&d.owner!==S.user.uid&&editMode&&d.status==='In review')?'<textarea id="reviewEditText" rows="12" style="width:100%;resize:vertical">'+esc(v.text)+'</textarea><div class="row"><button class="btn primary sm" data-act="commitEdit" data-id="'+esc(d.id)+'">Commit text edit</button><button class="btn sm" data-act="cancelEdit" data-id="'+esc(d.id)+'">Cancel</button></div>':'<div class="marked" style="max-height:220px">'+esc(v.text)+'</div></div>')+
     '<div><div class="sec">Review summary</div><div class="row"><span class="pill '+(blockers?'high':'ok')+'">'+blockers+' high open</span><span class="pill neutral">'+v.summary.disputed+' disputed</span><span class="pill ok">'+v.summary.resolved+' resolved by creator</span></div></div>'+
     (open?'<div><div class="sec">Still open at submission</div><ul class="stack" style="list-style:none;margin:0;padding:0;gap:8px">'+open+'</ul></div>':'')+
     (disp?'<div><div class="sec">Needs your decision: disputed by the creator</div><ul class="stack" style="list-style:none;margin:0;padding:0;gap:8px">'+disp+'</ul></div>':'')+
     '<div class="row" style="border-top:1px solid var(--line);padding-top:14px"><button class="btn" data-act="openReview" data-id="'+esc(d.id)+'">Open in Review</button>'+
-      (c.approve&&d.status==='In review'?'<button class="btn" data-act="editText" data-id="'+esc(d.id)+'">Edit text and commit</button>':'')+
+      (c.approve&&d.owner!==S.user.uid&&d.status==='In review'?'<button class="btn" data-act="editText" data-id="'+esc(d.id)+'">Edit text and commit</button>':'')+
       '<button class="btn" data-act="exportReview" data-id="'+esc(d.id)+'">Export review report</button>'+
       (d.status==='Approved'?'<button class="btn primary" data-act="copyApproved" data-id="'+esc(d.id)+'">Copy approved text</button>':'')+
       '<button class="btn primary" data-act="approve" data-id="'+esc(d.id)+'"'+(canDecide&&!blockers?'':' disabled')+'>Approve</button>'+
@@ -76,7 +77,7 @@ document.addEventListener('click',function(ev){
     return;}
   if(a==='editText'&&d){editMode=true;UI.drawer(detail(d));return;}
   if(a==='cancelEdit'&&d){editMode=false;UI.drawer(detail(d));return;}
-  if(a==='commitEdit'&&d&&c.approve&&d.status==='In review'){
+  if(a==='commitEdit'&&d&&c.approve&&d.owner!==S.user.uid&&d.status==='In review'){
     var text=(($('reviewEditText')||{}).value||'').trim();
     if(!text){UI.toast('The text cannot be empty.');return;}
     var old=latest(d).text;
@@ -102,7 +103,7 @@ document.addEventListener('click',function(ev){
     var t=($('commentBox').value||'').trim();if(!t)return;
     d.comments.push({by:c.role,text:t,at:new Date().toISOString()});addAudit(d,c.role,'Commented');S.saveDoc(d);UI.drawer(detail(d));return;}
   if((a==='approve'||a==='changes')&&d){
-    if(!c.approve||d.status!=='In review')return;
+    if(!c.approve||d.owner===S.user.uid||d.status!=='In review')return;
     var n=d.versions.length;
     if(a==='approve'){
       if(latest(d).summary.high>0)return;
