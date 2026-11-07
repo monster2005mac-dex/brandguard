@@ -194,9 +194,12 @@ document.addEventListener('click',function(ev){
     if(!text||!text.trim())return;
     var d=currentDoc();
     if(!d){UI.toast('Save the document before adding a passage comment.');return;}
-    d.comments=d.comments||[];d.comments.push({by:S.user.role,text:text.trim(),at:new Date().toISOString(),quote:quote});
-    addAudit(d,S.user.role,'Added a comment on selected text');
-    S.saveDoc(d).then(function(){UI.toast('Passage comment added.');}).catch(function(e){UI.toast('Comment failed: '+(e&&e.message||'Please try again.'));});
+    var commented=JSON.parse(JSON.stringify(d));
+    commented.comments=commented.comments||[];commented.comments.push({by:S.user.role,text:text.trim(),at:new Date().toISOString(),quote:quote});
+    addAudit(commented,S.user.role,'Added a comment on selected text');
+    S.saveDoc(commented).then(function(){UI.toast('Passage comment added.');}).catch(function(e){
+      UI.toast('Comment failed: '+(e&&e.message||'Please try again.'));
+    });
     return;}
   if(a==='jump'){var card=$('card-'+i);if(card){U.filter='all';card.scrollIntoView({behavior:'smooth',block:'center'});card.classList.add('flash');setTimeout(function(){card.classList.remove('flash');},1200);}return;}
   if(a==='accept'){var f=ss.findings[i];if(f&&c.edit&&!f.adviceOnly&&!f.needsInput)resolveWith(f,f.suggestion,'accepted');return;}
@@ -218,6 +221,7 @@ document.addEventListener('click',function(ev){
   if(a==='submit'){
     recompute();var sm=sumry();
     if(sm.high.length){UI.toast('Fix or dispute the '+E.plural(sm.high.length,'high-severity finding')+' first.');return;}
+    var existing=currentDoc(),previousStatus=existing?existing.status:'Draft';
     var d2=saveVersion(true);if(!d2)return;
     d2.status='In review';addAudit(d2,S.user.role,'Submitted version '+d2.versions.length+' for approval');
     S.saveDoc(d2).then(function(){
@@ -226,6 +230,9 @@ document.addEventListener('click',function(ev){
       try{sessionStorage.setItem('bg.selDoc',d2.id);}catch(e){}
       location.href='workflow.html';
     }).catch(function(e){
+      d2.status=previousStatus==='In review'?'Draft':previousStatus;
+      d2.versions.pop();d2.audit.splice(Math.max(0,d2.audit.length-2),2);
+      persist();
       UI.toast('Submission failed: '+(e&&e.message||'Please try again.'));
     });
     return;}

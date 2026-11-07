@@ -85,8 +85,9 @@ document.addEventListener('click',function(ev){
     var copy=JSON.parse(JSON.stringify(latest(d)));
     copy.n=d.versions.length+1;copy.text=text;copy.at=new Date().toISOString();copy.by=c.role;
     copy.summary=copy.summary||{high:0,disputed:0,resolved:0,openList:[],disputedList:[]};
-    d.versions.push(copy);addAudit(d,c.role,'Committed text edit as version '+copy.n);
-    S.saveDoc(d).then(function(){editMode=false;UI.drawer(detail(d));UI.toast('Text edit committed as version '+copy.n+'.');}).catch(function(e){d.versions.pop();UI.toast('Commit failed: '+(e&&e.message||'Try again.'));});
+    var edited=JSON.parse(JSON.stringify(d));
+    edited.versions.push(copy);addAudit(edited,c.role,'Committed text edit as version '+copy.n);
+    S.saveDoc(edited).then(function(){editMode=false;UI.drawer(detail(edited));UI.toast('Text edit committed as version '+copy.n+'.');}).catch(function(e){UI.toast('Commit failed: '+(e&&e.message||'Try again.'));});
     return;}
   if(a==='open'&&d){sel=id;UI.drawer(detail(d));return;}
   if(a==='openReview'&&d){try{sessionStorage.setItem('bg.openDoc',id);}catch(e){}location.href='review.html';return;}
@@ -101,20 +102,25 @@ document.addEventListener('click',function(ev){
     return;}
   if(a==='comment'&&d){
     var t=($('commentBox').value||'').trim();if(!t)return;
-    d.comments.push({by:c.role,text:t,at:new Date().toISOString()});addAudit(d,c.role,'Commented');    S.saveDoc(d).then(function(){UI.drawer(detail(d));UI.toast('Comment added.');}).catch(function(e){UI.toast('Comment failed: '+(e&&e.message||'Please try again.'));});return;}
+    var commented=JSON.parse(JSON.stringify(d));
+    commented.comments=commented.comments||[];commented.comments.push({by:c.role,text:t,at:new Date().toISOString()});addAudit(commented,c.role,'Commented');
+    S.saveDoc(commented).then(function(){UI.drawer(detail(commented));UI.toast('Comment added.');}).catch(function(e){UI.toast('Comment failed: '+(e&&e.message||'Please try again.'));});return;}
   if((a==='approve'||a==='changes')&&d){
     if(!c.approve||d.owner===S.user.uid||d.status!=='In review')return;
     var n=d.versions.length;
+    var decided=JSON.parse(JSON.stringify(d));
     if(a==='approve'){
       if(latest(d).summary.high>0)return;
-      d.status='Approved';addAudit(d,c.role,'Approved version '+n);UI.toast('Approved. This version is locked.');
+      decided.status='Approved';addAudit(decided,c.role,'Approved version '+n);
     }else{
       var t2=(($('commentBox')||{}).value||'').trim();
       if(!t2){UI.toast('Write what to change in the comment box, then click Request changes.');return;}
-      d.comments.push({by:c.role,text:t2,at:new Date().toISOString()});
-      d.status='Changes requested';addAudit(d,c.role,'Requested changes on version '+n);UI.toast('Changes requested.');
+      decided.comments=decided.comments||[];decided.comments.push({by:c.role,text:t2,at:new Date().toISOString()});
+      decided.status='Changes requested';addAudit(decided,c.role,'Requested changes on version '+n);
     }
-    S.saveDoc(d).then(function(){UI.drawer(detail(d));}).catch(function(e){UI.toast('Review decision failed: '+(e&&e.message||'Please try again.'));});return;}
+    S.saveDoc(decided).then(function(){
+      UI.drawer(detail(decided));UI.toast(a==='approve'?'Approved. This version is locked.':'Changes requested.');
+    }).catch(function(e){UI.toast('Review decision failed: '+(e&&e.message||'Please try again.'));});return;}
 });
 
 sh.start({

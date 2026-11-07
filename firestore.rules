@@ -53,12 +53,13 @@ service cloud.firestore {
         && (
           // owner saving or submitting
           (resource.data.owner == request.auth.uid
-            && resource.data.status in ['Draft', 'In review', 'Changes requested']
+            && resource.data.status in ['Draft', 'In review', 'Changes requested', 'Approved']
             && request.resource.data.status in ['Draft', 'In review'])
           // owner re-saving a reviewed document without touching its status is not allowed;
           // the client must reset it to Draft, which the line above permits.
           // reviewer / admin decisions on somebody else's document
           || (isReviewer() && resource.data.owner != request.auth.uid
+              && resource.data.status == 'In review'
               && request.resource.data.status in ['Draft', 'In review', 'Approved', 'Changes requested'])
           // reviewer / admin may comment on their own document only as Draft / In review
           || (isReviewer() && resource.data.owner == request.auth.uid

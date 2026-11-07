@@ -23,10 +23,22 @@ var SAMPLE_DRAFT='';
 function seedRules(){
   return {
     company:'Your company',
-    guidelines:[],
-    terms:[],
-    facts:[],
-    claims:[]
+    guidelines:[
+      {id:'G-01',check:'tone',text:'Use a warm, professional voice without slang.'},
+      {id:'G-02',check:'absolutes',text:'Do not promise guaranteed outcomes or absolute results.'},
+      {id:'G-03',check:'readability',text:'Keep sentences clear and under 25 words.'},
+      {id:'G-04',check:'a11y',text:'Use meaningful link text and describe images with alt text.'}
+    ],
+    terms:[
+      {id:'T-01',pattern:'students',good:'learners',text:'Use learner-focused terminology.'}
+    ],
+    facts:[
+      {id:'F-01',subject:'Learners',value:'48000',display:'48,000 learners',pattern:'(\\d[\\d,]*)\\+?\\s+learners',owner:'Content operations',expires:isoPlus(365)},
+      {id:'F-03',subject:'Courses',value:'120',display:'120 courses',pattern:'(\\d[\\d,]*)\\s+courses',owner:'Content operations',expires:isoPlus(365)}
+    ],
+    claims:[
+      {id:'C-01',pattern:'(?:India|#1\\s+(?:learning\\s+)?platform|number one)',label:'Ranking',fix:'a leading platform in India',text:'Ranking claims need supporting evidence.'}
+    ]
   };
 }
 /* A real workspace starts from this: the generic exact checks, no invented company facts.
@@ -35,6 +47,7 @@ function templateRules(company){
   var r=seedRules();
   r.company=company||'Your company';
   r.terms=[];r.facts=[];
+  r.claims=[];
   r.gemini=undefined;delete r.gemini;
   return r;
 }

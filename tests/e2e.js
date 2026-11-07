@@ -31,8 +31,10 @@ async function newCtx(browser, mode) {
     await page.waitForURL('**/workflow.html');
     await page.goto(BASE + 'review.html');
     await page.waitForSelector('#findings');
+    await page.fill('#draft', 'We guarantee 100% results for students.');
+    await page.waitForTimeout(600);
     const n = await page.locator('#findings .finding, #findings [id^=card-]').count();
-    assert(n >= 5, 'sample draft should produce findings, got ' + n); ok('local: review page shows ' + n + ' findings on sample draft');
+    assert(n >= 2, 'entered draft should produce findings, got ' + n); ok('local: review page shows ' + n + ' findings on entered draft');
     for (const p of ['workflow', 'rules', 'insights', 'about', 'index']) { await page.goto(BASE + p + '.html'); await page.waitForTimeout(300); }
     ok('local: all pages load');
     // admin rules page

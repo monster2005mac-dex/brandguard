@@ -213,9 +213,14 @@ S.saveRules=function(r){
 S.saveDoc=function(d){
   if(S.mode==='firebase'&&S.user)d.owner=d.owner||S.user.uid;
   var i=shared.docs.findIndex(function(x){return x.id===d.id;});
+  var previous=i>=0?JSON.parse(JSON.stringify(shared.docs[i])):null;
   if(i>=0)shared.docs[i]=d;else shared.docs.push(d);
   emit();
-  if(S.mode==='firebase')return db.collection('docs').doc(d.id).set(clean(d)).catch(S._err);
+  if(S.mode==='firebase')return db.collection('docs').doc(d.id).set(clean(d)).catch(function(e){
+    if(previous)shared.docs[i]=previous;else shared.docs=shared.docs.filter(function(x){return x.id!==d.id;});
+    emit();
+    return S._err(e);
+  });
   persistLocal();return Promise.resolve();
 };
 S.deleteDoc=function(id){
@@ -224,9 +229,12 @@ S.deleteDoc=function(id){
   if(S.mode==='firebase'&&S.user.role!=='Admin'&&(d.owner!==S.user.uid||d.status==='Approved'||d.status==='In review')){
     return Promise.reject(new Error('Only Draft or Changes-requested documents owned by you can be deleted.'));
   }
+  var copy=JSON.parse(JSON.stringify(d));
   shared.docs=shared.docs.filter(function(x){return x.id!==id;});
   emit();
-  if(S.mode==='firebase')return db.collection('docs').doc(id).delete().catch(S._err);
+  if(S.mode==='firebase')return db.collection('docs').doc(id).delete().catch(function(e){
+    shared.docs.push(copy);emit();return S._err(e);
+  });
   persistLocal();return Promise.resolve();
 };
 S.addEvent=function(e){
