@@ -43,6 +43,7 @@ function detail(d){
       (d.status==='Approved'?'<button class="btn primary" data-act="copyApproved" data-id="'+esc(d.id)+'">Copy approved text</button>':'')+
       '<button class="btn primary" data-act="approve" data-id="'+esc(d.id)+'"'+(canDecide&&!blockers?'':' disabled')+'>Approve</button>'+
       '<button class="btn danger" data-act="changes" data-id="'+esc(d.id)+'"'+(canDecide?'':' disabled')+'>Request changes</button></div>'+
+    ((c.admin||(c.role==='Creator'&&d.owner===S.user.uid&&(d.status==='Draft'||d.status==='Changes requested')))?'<div><button class="btn danger" data-act="deleteDoc" data-id="'+esc(d.id)+'">Delete document permanently</button></div>':'')+
     (why?'<div class="small muted">'+esc(why)+'</div>':'')+
     '<div><div class="sec">Comments</div>'+
       (d.comments.length?'<ul class="stack" style="list-style:none;margin:0 0 10px;padding:0;gap:10px">'+d.comments.map(function(m){return '<li><b>'+esc(m.by)+'</b> <span class="small muted">'+E.fmt(m.at)+'</span>'+ (m.quote?' <blockquote class="quote small">'+esc(m.quote.slice(0,160))+'</blockquote>':'')+'<div>'+esc(m.text)+'</div></li>';}).join('')+'</ul>':'<div class="small muted" style="margin-bottom:10px">No comments yet.</div>')+
@@ -62,6 +63,17 @@ function find(id){return S.visibleDocs().find(function(x){return x.id===id;});}
 document.addEventListener('click',function(ev){
   var el=ev.target.closest('[data-act]');if(!el)return;
   var a=el.dataset.act,id=el.dataset.id,c=sh.can(),d=id?find(id):null;
+  if(a==='deleteDoc'&&d){
+    var canDelete=c.admin||(c.role==='Creator'&&d.owner===S.user.uid&&(d.status==='Draft'||d.status==='Changes requested'));
+    if(!canDelete)return;
+    if(!window.confirm('Delete "'+(d.title||'this document')+'" permanently? This cannot be undone.'))return;
+    S.deleteDoc(d.id).then(function(){
+      UI.closeDrawer();
+      sel=null;
+      render();
+      UI.toast('Document deleted.');
+    }).catch(function(e){UI.toast('Delete failed: '+(e&&e.message||'Please try again.'));});
+    return;}
   if(a==='editText'&&d){editMode=true;UI.drawer(detail(d));return;}
   if(a==='cancelEdit'&&d){editMode=false;UI.drawer(detail(d));return;}
   if(a==='commitEdit'&&d&&c.approve&&d.status==='In review'){

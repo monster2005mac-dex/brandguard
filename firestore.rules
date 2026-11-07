@@ -27,7 +27,10 @@ service cloud.firestore {
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['role'])
           && request.resource.data.role in ['Creator', 'Reviewer', 'Admin'])
       );
-      allow delete: if isAdmin();
+      allow delete: if isAdmin()
+        || (signedIn()
+          && resource.data.owner == request.auth.uid
+          && resource.data.status in ['Draft', 'Changes requested']);
     }
 
     // ---------- Brand rules ----------

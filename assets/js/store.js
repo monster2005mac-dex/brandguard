@@ -218,6 +218,17 @@ S.saveDoc=function(d){
   if(S.mode==='firebase')return db.collection('docs').doc(d.id).set(clean(d)).catch(S._err);
   persistLocal();return Promise.resolve();
 };
+S.deleteDoc=function(id){
+  var d=shared.docs.find(function(x){return x.id===id;});
+  if(!d)return Promise.resolve();
+  if(S.mode==='firebase'&&S.user.role!=='Admin'&&(d.owner!==S.user.uid||d.status==='Approved'||d.status==='In review')){
+    return Promise.reject(new Error('Only Draft or Changes-requested documents owned by you can be deleted.'));
+  }
+  shared.docs=shared.docs.filter(function(x){return x.id!==id;});
+  emit();
+  if(S.mode==='firebase')return db.collection('docs').doc(id).delete().catch(S._err);
+  persistLocal();return Promise.resolve();
+};
 S.addEvent=function(e){
   shared.events.push(e);emit();
   if(S.mode==='firebase')return db.collection('events').add(clean(e)).catch(S._err);
