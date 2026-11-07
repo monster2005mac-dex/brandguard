@@ -18,7 +18,6 @@ service cloud.firestore {
       allow read: if signedIn();
       allow create: if signedIn() && request.auth.uid == uid
         && (request.resource.data.role == 'Creator'
-          || request.resource.data.role == 'Reviewer'
           || (request.resource.data.role == 'Admin' && !workspaceExists()));
       allow update: if signedIn() && (
         (request.auth.uid == uid
@@ -54,6 +53,7 @@ service cloud.firestore {
         && (
           // owner saving or submitting
           (resource.data.owner == request.auth.uid
+            && resource.data.status in ['Draft', 'In review', 'Changes requested']
             && request.resource.data.status in ['Draft', 'In review'])
           // owner re-saving a reviewed document without touching its status is not allowed;
           // the client must reset it to Draft, which the line above permits.

@@ -196,7 +196,7 @@ document.addEventListener('click',function(ev){
     if(!d){UI.toast('Save the document before adding a passage comment.');return;}
     d.comments=d.comments||[];d.comments.push({by:S.user.role,text:text.trim(),at:new Date().toISOString(),quote:quote});
     addAudit(d,S.user.role,'Added a comment on selected text');
-    S.saveDoc(d);UI.toast('Passage comment added.');
+    S.saveDoc(d).then(function(){UI.toast('Passage comment added.');}).catch(function(e){UI.toast('Comment failed: '+(e&&e.message||'Please try again.'));});
     return;}
   if(a==='jump'){var card=$('card-'+i);if(card){U.filter='all';card.scrollIntoView({behavior:'smooth',block:'center'});card.classList.add('flash');setTimeout(function(){card.classList.remove('flash');},1200);}return;}
   if(a==='accept'){var f=ss.findings[i];if(f&&c.edit&&!f.adviceOnly&&!f.needsInput)resolveWith(f,f.suggestion,'accepted');return;}

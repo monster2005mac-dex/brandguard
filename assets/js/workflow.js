@@ -101,7 +101,7 @@ document.addEventListener('click',function(ev){
     return;}
   if(a==='comment'&&d){
     var t=($('commentBox').value||'').trim();if(!t)return;
-    d.comments.push({by:c.role,text:t,at:new Date().toISOString()});addAudit(d,c.role,'Commented');S.saveDoc(d);UI.drawer(detail(d));return;}
+    d.comments.push({by:c.role,text:t,at:new Date().toISOString()});addAudit(d,c.role,'Commented');    S.saveDoc(d).then(function(){UI.drawer(detail(d));UI.toast('Comment added.');}).catch(function(e){UI.toast('Comment failed: '+(e&&e.message||'Please try again.'));});return;}
   if((a==='approve'||a==='changes')&&d){
     if(!c.approve||d.owner===S.user.uid||d.status!=='In review')return;
     var n=d.versions.length;
@@ -114,7 +114,7 @@ document.addEventListener('click',function(ev){
       d.comments.push({by:c.role,text:t2,at:new Date().toISOString()});
       d.status='Changes requested';addAudit(d,c.role,'Requested changes on version '+n);UI.toast('Changes requested.');
     }
-    S.saveDoc(d);UI.drawer(detail(d));return;}
+    S.saveDoc(d).then(function(){UI.drawer(detail(d));}).catch(function(e){UI.toast('Review decision failed: '+(e&&e.message||'Please try again.'));});return;}
 });
 
 sh.start({
