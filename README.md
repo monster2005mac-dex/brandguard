@@ -67,6 +67,9 @@ Exact rules (terms, facts, claims, accessibility, tone) run in the browser. Gemi
 ```
 index.html login.html review.html workflow.html rules.html insights.html about.html
 assets/css/styles.css        design system (light and dark)
+assets/css/3d.css            v5 "Seal Chamber" 3D layer: tokens, hero scene, cube, photo cards, workspace polish
+assets/js/fx.js              tilt, parallax, rotating rule cube, count-up, photo loader (progressive enhancement)
+assets/img/                  optional: drop creator.jpg, reviewer.jpg, admin.jpg, cta.jpg, login.jpg to use your own photos
 assets/js/engine.js          rule engine, brand pack, diff, score (pure functions)
 assets/js/store.js           local + Firebase data store and auth
 assets/js/ai.js              optional Gemini layer
