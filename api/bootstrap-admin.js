@@ -2,6 +2,8 @@
 'use strict';
 
 const engine = require('../assets/js/engine.js');
+const DEFAULT_INITIAL_ADMIN_EMAIL = 'admin@brand.co.in';
+const DEFAULT_WORKSPACE_NAME = 'BrandGuard';
 let firebaseApp;
 
 function respond(res, status, body) { return res.status(status).json(body); }
@@ -41,8 +43,8 @@ module.exports = async function handler(req, res) {
   if (req.method === 'OPTIONS') return respond(res, 204, {});
   if (req.method !== 'POST') return respond(res, 405, { error: 'POST only', code: 'method_not_allowed' });
 
-  const allowedEmail = String(process.env.INITIAL_ADMIN_EMAIL || '').trim().toLowerCase();
-  const workspaceName = String(process.env.BOOTSTRAP_WORKSPACE_NAME || '').trim();
+  const allowedEmail = String(process.env.INITIAL_ADMIN_EMAIL || DEFAULT_INITIAL_ADMIN_EMAIL).trim().toLowerCase();
+  const workspaceName = String(process.env.BOOTSTRAP_WORKSPACE_NAME || DEFAULT_WORKSPACE_NAME).trim();
   if (!process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
     return respond(res, 503, { error: 'First Admin provisioning is not configured.', code: 'not_configured' });
   }

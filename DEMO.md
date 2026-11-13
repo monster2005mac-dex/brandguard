@@ -5,7 +5,7 @@
 2. `firebase deploy --only firestore:rules`
 3. Vercel: import repo, set `GEMINI_API_KEY`, `FIREBASE_API_KEY`, and `FIREBASE_SERVICE_ACCOUNT_JSON`, deploy. The service-account JSON is required for server-verified approvals; keep it in Vercel secrets only.
 4. Firebase → Authentication → Settings → Authorized domains: add your `*.vercel.app` domain.
-5. Set `INITIAL_ADMIN_EMAIL` and `BOOTSTRAP_WORKSPACE_NAME` in Vercel. Create and verify that Firebase Authentication account, then sign in; the first workspace Admin is provisioned automatically. Public sign-up remains disabled.
+5. Create and verify the `admin@brand.co.in` Firebase Authentication account (or the configured email override), then sign in; the first workspace Admin is provisioned automatically. Public sign-up remains disabled.
 6. Brand rules → **Test connection** (should say Gemini replied). If not: check the env vars, redeploy.
 7. Create two more accounts in other browsers/incognito (Creator, and one you promote to Reviewer).
 8. Do the full demo below once. Keep the sample guidelines file handy (any 1-2 page brand guide as PDF/DOCX).

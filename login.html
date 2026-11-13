@@ -137,7 +137,7 @@ try{
     var c=e&&e.code||'';
     if(c==='invite_required')return 'Your Firebase account is valid, but it is not linked to a BrandGuard workspace. Ask a workspace Admin for an invitation and use its link to join. Public sign-up is disabled.';
     if(c==='verified_email_required')return 'Verify the invited email address using the link we sent, then sign in again.';
-    if(c==='not_configured')return 'First Admin setup is not configured on the server. Ask the deployment owner to set INITIAL_ADMIN_EMAIL and BOOTSTRAP_WORKSPACE_NAME.';
+    if(c==='not_configured')return 'First Admin setup is unavailable because the server is missing valid FIREBASE_SERVICE_ACCOUNT_JSON credentials for this Firebase project.';
     if(c==='workspace_conflict')return 'Workspace data already exists for a different account. Nothing was changed; ask the deployment owner to check the Admin UID.';
     if(c==='provisioning_failed')return 'The initial workspace could not be created. Try again or ask the deployment owner to check the server logs.';
     if(c==='invalid_workspace'||c==='invalid_default_rules')return 'The initial workspace configuration is invalid. Ask the deployment owner to check its settings.';

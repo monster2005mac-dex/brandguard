@@ -34,7 +34,7 @@ For all Round 3 server features, deploy the site/API on Vercel with Firebase as 
 
 #### Create the first workspace Admin
 
-Self-registration is disabled. On Vercel, set `INITIAL_ADMIN_EMAIL` to the exact, verified Firebase Authentication email allowed to create the first Admin, and set `BOOTSTRAP_WORKSPACE_NAME`. With `FIREBASE_SERVICE_ACCOUNT_JSON` also configured, the first sign-in by that verified account creates the workspace, brand rules, and Admin profile in a server-side transaction. Other accounts remain invitation-only. Existing matching workspace data is not overwritten; conflicting data stops provisioning.
+Self-registration is disabled. The first Admin is `admin@brand.co.in` by default. On Vercel, configure `FIREBASE_SERVICE_ACCOUNT_JSON` for this Firebase project; the first verified sign-in from that email creates the workspace, brand rules, and Admin profile in a server-side transaction. `INITIAL_ADMIN_EMAIL` and `BOOTSTRAP_WORKSPACE_NAME` can optionally override the email and default workspace name (`BrandGuard`). Other accounts remain invitation-only. Existing matching workspace data is not overwritten; conflicting data stops provisioning.
 
 For a fresh deployment that is not using the Vercel API, you can still bootstrap once from a trusted local shell by setting `FIREBASE_SERVICE_ACCOUNT_JSON`, `BOOTSTRAP_ADMIN_UID` (the Auth user's UID), and `BOOTSTRAP_WORKSPACE_NAME`, then running:
 
@@ -69,13 +69,13 @@ For an existing deployment with the legacy `brand/rules` singleton, back up Fire
 2. Add environment variables:
    - `GEMINI_API_KEY`: your Google AI Studio key (secret, server only).
    - `FIREBASE_SERVICE_ACCOUNT_JSON`: a Firebase service-account JSON value. Required by server-verified approvals, invitations, and shared AI rate limiting. Keep it in Vercel only; never commit it.
-   - `INITIAL_ADMIN_EMAIL`: the exact email allowed to provision the first Admin on first verified sign-in.
-   - `BOOTSTRAP_WORKSPACE_NAME`: the name of the initial workspace created for that Admin.
+   - `INITIAL_ADMIN_EMAIL` (optional): override the default `admin@brand.co.in` first Admin email.
+   - `BOOTSTRAP_WORKSPACE_NAME` (optional): override the default `BrandGuard` workspace name.
    - `GEMINI_MODEL` (optional; default `gemini-2.5-flash`).
    - `APP_ORIGIN` (optional; set only when the API is called from another domain).
 3. Deploy, then add the Vercel domain in Firebase **Authentication > Settings > Authorized domains**.
 4. Publish the security rules: `firebase deploy --only firestore:rules`. They deny direct client writes of `Approved` status.
-5. Create the initial Firebase Authentication account with `INITIAL_ADMIN_EMAIL`, verify it, and sign in; the Vercel endpoint provisions the first workspace automatically. The Admin issues invitations from **Brand rules > Team**; public sign-up is disabled.
+5. Create the initial Firebase Authentication account as `admin@brand.co.in` (or the configured override), verify it, and sign in; the Vercel endpoint provisions the first workspace automatically. The Admin issues invitations from **Brand rules > Team**; public sign-up is disabled.
 6. On **Brand rules**, click **Test connection**, then **Import from guidelines document**.
 
 Nothing secret is stored in Firestore or sent to the browser. The old shared "Gemini keys" feature was removed.

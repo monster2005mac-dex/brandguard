@@ -91,12 +91,15 @@ async function request(token) {
     assert.strictEqual(records.size, 0);
 
     const configuredEmail = process.env.INITIAL_ADMIN_EMAIL;
+    const configuredWorkspaceName = process.env.BOOTSTRAP_WORKSPACE_NAME;
     delete process.env.INITIAL_ADMIN_EMAIL;
-    const provisioningDisabled = await request('admin-token');
+    delete process.env.BOOTSTRAP_WORKSPACE_NAME;
+    const defaultsProvisioning = await request('admin-token');
+    assert.strictEqual(defaultsProvisioning.statusCode, 200);
+    assert.strictEqual(records.get('workspaces/ws-first-admin').name, 'BrandGuard');
+    records.clear();
     process.env.INITIAL_ADMIN_EMAIL = configuredEmail;
-    assert.strictEqual(provisioningDisabled.statusCode, 404);
-    assert.strictEqual(provisioningDisabled.body.code, 'not_initial_admin');
-    assert.strictEqual(records.size, 0);
+    process.env.BOOTSTRAP_WORKSPACE_NAME = configuredWorkspaceName;
 
     const created = await request('admin-token');
     assert.strictEqual(created.statusCode, 200);
