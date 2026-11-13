@@ -114,29 +114,21 @@ assets/js/shell.js           sidebar, roles, profile photo, toasts, drawer
 assets/js/{review,workflow,rules,insights,about}.js
 assets/js/firebase-config.js paste your Firebase keys here
 firestore.rules firebase.json api/approve.js functions/
-_previous_version/           earlier single-file build, kept for reference
 ```
 
 ## AI use disclosure
 Powered by Google Gemini. The optional deep check sends the draft and the rule list to Gemini only when a person clicks it. The brand pack, facts and sample history are fictional.
 
-## v4 changes
-- Landing nav shows **Login** when signed out. When signed in it shows your photo (or initial) and name, and clicking it goes straight to your workspace (Admin to Brand rules, everyone else to Workshop). It paints instantly from a small local hint (`bg.hint`) and Firebase confirms in the background.
-- `login.html` skips itself when you are already signed in, waits for the account to load before redirecting, and has show/hide password, forgot password, and busy states.
-- App pages show a skeleton while Firebase starts instead of a blank "Loading" line.
-- Profile photo: Google photo is used automatically; anyone can upload their own (stored as a 160px JPEG on their `users` document) from the profile panel.
-- Landing: mobile menu, FAQ, scroll reveal, skip link, favicon, share tags, 404 page. Sign out returns to the website.
-- `firestore.rules`: owners can no longer set their own content to Approved or Changes requested; only Reviewer/Admin can. **Redeploy rules:** `firebase deploy --only firestore:rules`.
-
-## v5: "real use" changes
-- **Real roles.** The first account becomes Admin. Roles are changed only by an Admin (Brand rules > Team) and enforced by `firestore.rules`. No self-promotion, no hardcoded admin email.
-- **Separation of duties.** Nobody can approve a document they own; the server approval endpoint verifies this and Firestore rules deny direct client approval. Editing an approved document sends it back to Draft.
-- **No fake data in a live workspace.** It starts with the generic checks only. "Load sample brand pack" is available to Admins for demos.
-- **AI import of brand guidelines.** Upload a PDF/DOCX/TXT; Gemini drafts guidelines, terms, approved facts and risky-claim types; the Admin reviews before anything is saved.
-- **Gemini key stays on the server** (`/api/gemini`, verified Firebase ID token, per-user rate limit). A personal key can still be pasted for local demos, kept only in that browser.
-- **Tests:** `npm test` covers the engine, AI verifier and approval endpoint; `node tests/e2e.js` runs the browser journeys against an in-memory Firebase mock with `npm start` running.
-
-## Still honest limits
+## Known limits
 - Firestore rules and the Vercel endpoint have not been tested against a live Firebase project or emulator here. Follow [DEMO.md](./DEMO.md) and run an emulator/staging approval journey before production.
 - Fact checking is pattern-based and may miss unusual wording or formats. Image review checks sampled palette colors and a creator-selected contrast pair; it does not perform OCR, logo matching, or full layout review.
 - Per-user rate limit is per warm serverless instance.
+
+## Reliability behaviour (Round 3)
+- Saving twice with no changes does not create a duplicate version; the user is told nothing changed.
+- Submit is guarded against double-clicks and against re-submitting a draft already in review.
+- Failed saves, role changes and resets show an explanation instead of failing silently; the draft stays in the browser.
+- Demo reset asks for confirmation.
+
+## Submission document
+See [SUBMISSION.md](./SUBMISSION.md) for the feature list, architecture summary, improvements, testing details and roadmap.

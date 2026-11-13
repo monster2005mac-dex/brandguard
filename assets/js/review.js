@@ -5,6 +5,7 @@ var BG=window.BG,E=BG.engine,esc=E.esc,S=BG.store,UI=BG.ui,sh=BG.shell;
 var ss=null;
 var U={open:null,aiBusy:false,aiMsg:'',timer:null,filter:'all',busy:false};
 var $=function(id){return document.getElementById(id);};
+var MAX_TEXT=20000;
 var TYPES=['LinkedIn post','Web page','Email','Press note','Ad copy'];
 
 function persist(){BG.session.save({docId:ss.docId,title:ss.title,type:ss.type,intent:ss.intent,text:ss.text,ai:ss.ai,disputed:ss.disputed,resolved:ss.resolved,aiMeta:ss.aiMeta,image:ss.image||null,visualDisputed:ss.visualDisputed||{}});}
@@ -134,7 +135,7 @@ function render(){
       '<div class="row"><div class="field" style="flex:2 1 220px"><label for="title">Title</label><input type="text" id="title" value="'+esc(ss.title)+'"'+(canEdit?'':' disabled')+'></div>'+
       '<div class="field" style="flex:1 1 150px"><label for="ctype">Content type</label><select id="ctype"'+(canEdit?'':' disabled')+'>'+TYPES.map(function(t){return '<option'+(t===ss.type?' selected':'')+'>'+t+'</option>';}).join('')+'</select></div></div>'+
       '<div class="field"><label for="intent">Intent <span class="muted">(optional)</span></label><input type="text" id="intent" placeholder="What should this content achieve?" value="'+esc(ss.intent||'')+'"'+(canEdit?'':' disabled')+'></div>'+
-      '<div class="field"><label for="draft">Content to review</label><textarea id="draft" spellcheck="false"'+(canEdit?'':' readonly')+'></textarea></div>'+
+      '<div class="field"><label for="draft">Content to review</label><textarea id="draft" maxlength="20000" placeholder="Paste or type your draft here (up to 20,000 characters)" spellcheck="false"'+(canEdit?'':' readonly')+'></textarea></div>'+
       (canEdit?visualInputHtml():(doc&&doc.image?'<section class="panel"><h2>Attached image</h2><img src="'+esc(doc.image.dataUrl)+'" alt="'+esc(doc.visual&&doc.visual.alt||'')+'" style="max-width:100%;max-height:300px;object-fit:contain;border-radius:12px"></section>':''))+
       '<div class="row"><button class="btn sm" data-act="import">Import text / DOCX / PDF</button><input type="file" id="importFile" accept=".txt,.md,.docx,.pdf,text/plain" hidden>'+
         '<button class="btn sm ghost" data-act="commentSelection"'+(canEdit?'':' disabled')+'>Comment on selected text</button></div>'+
@@ -164,6 +165,7 @@ function resolveWith(f,rep,outcome){
 function flushPending(){if(U.timer){clearTimeout(U.timer);U.timer=null;recompute();render();return true;}return false;}
 function addAudit(d,who,what){d.audit.push({at:new Date().toISOString(),who:who,what:what});}
 function saveVersion(skipSave){
+  U.unchanged=false;
   if(!ss.title.trim()){UI.toast('Add a title first.');return null;}
   if(!ss.text.trim()){UI.toast('The draft is empty.');return null;}
   recompute();var sm=sumry(),role=S.user.role;
@@ -173,16 +175,21 @@ function saveVersion(skipSave){
     rulesFingerprint:E.fingerprint(S.rules),checkSnapshot:E.checkSnapshot(ss.text,S.rules),visualSnapshot:E.visualSnapshot(ss.image)};
   var d=currentDoc();
   if(!d){d={id:'d-'+Date.now(),title:ss.title.trim(),type:ss.type,status:'Draft',versions:[],comments:[],audit:[],owner:S.user.uid};ss.docId=d.id;}
-  d.title=ss.title.trim();d.type=ss.type;d.intent=ss.intent||'';
-  d.image=ss.image?{dataUrl:ss.image.dataUrl,name:ss.image.name,width:ss.image.width,height:ss.image.height}:null;
-  d.visual=E.visualSnapshot(ss.image);
+  var prevImage=d.image||null,prevVisual=JSON.stringify(d.visual||null);
+  var nextImage=ss.image?{dataUrl:ss.image.dataUrl,name:ss.image.name,width:ss.image.width,height:ss.image.height}:null;
+  var nextVisual=E.visualSnapshot(ss.image);
+  var last=d.versions[d.versions.length-1];
+  var sameImage=(prevImage&&nextImage?prevImage.dataUrl===nextImage.dataUrl:!(prevImage||nextImage))&&prevVisual===JSON.stringify(nextVisual||null);
+  var unchanged=!!(last&&last.text===ss.text&&last.summary&&last.summary.rulesFingerprint===summary.rulesFingerprint&&sameImage&&d.title===ss.title.trim()&&(d.intent||'')===(ss.intent||'')&&d.status!=='Approved'&&d.status!=='Changes requested');
+  d.title=ss.title.trim();d.type=ss.type;d.intent=ss.intent||'';d.image=nextImage;d.visual=nextVisual;
+  if(unchanged){U.unchanged=true;persist();return d;}
   var n=d.versions.length+1;
   d.versions.push({n:n,text:ss.text,at:new Date().toISOString(),by:role,summary:summary});
   addAudit(d,role,'Saved version '+n);
   if(d.status==='Approved'||d.status==='Changes requested'){addAudit(d,'System','Status reset to Draft because the content changed. It needs review again.');d.status='Draft';}
   if(!skipSave){
     var save=S.saveDoc(d);
-    if(save&&save.catch)save.catch(function(e){console.error('Draft save failed:',e);});
+    if(save&&save.catch)save.catch(function(e){console.error('Draft save failed:',e);UI.toast('Could not save to the workspace: '+(e&&e.message||'check your connection')+'. Your draft is kept in this browser.');});
   }
   persist();return d;
 }
@@ -220,7 +227,7 @@ function runAI(){
           reviewerOnly:(c.category==='Claims'||c.category==='Facts')&&c.severity==='high'});
       });
       ss.ai=kept;
-      ss.aiMeta='Gemini suggested '+list.length+' issue'+(list.length===1?'':'s')+'. '+kept.length+' passed quote, rule-source and independent rule-support checks. '+(dropped+unsupported)+' were dropped by verification'+(dup?', and '+dup+' repeated an exact check':'')+'.';
+      ss.aiMeta='Gemini suggested '+list.length+' issue'+(list.length===1?'':'s')+'. '+kept.length+' passed quote, rule-source and independent rule-support checks. '+(ss.text.length>6000?'Only the first 6,000 characters were sent to Gemini; exact checks cover the whole draft. ':'')+(dropped+unsupported)+' were dropped by verification'+(dup?', and '+dup+' repeated an exact check':'')+'.';
       U.aiMsg='Deep check finished.';
     });
   }).catch(function(e){
@@ -276,21 +283,25 @@ document.addEventListener('click',function(ev){
     if(r.length<3){UI.toast('Give a short reason so the guideline owner can learn from it.');return;}
     ss.disputed[f3.key]=r;logEvent(f3,'disputed',r);U.open=null;recompute();persist();render();UI.toast('Disputed. A reviewer will see your reason.');return;}
   if(a==='reopen'){delete ss.disputed[ss.findings[i].key];recompute();persist();render();return;}
-  if(a==='save'){var d=saveVersion();if(d){render();UI.toast('Saved as version '+d.versions.length+'.');}return;}
+  if(a==='save'){var d=saveVersion();if(d){render();UI.toast(U.unchanged?'Nothing has changed since version '+d.versions.length+'.':'Saved as version '+d.versions.length+'.');}return;}
   if(a==='submit'){
+    if(U.busy)return;
     recompute();var sm=sumry();
     if(sm.high.length){UI.toast('Fix or dispute the '+E.plural(sm.high.length,'high-severity finding')+' first.');return;}
     var existing=currentDoc(),previousStatus=existing?existing.status:'Draft';
-    var d2=saveVersion(true);if(!d2)return;
+    var unchangedVersion=false,d2=saveVersion(true);if(!d2)return;unchangedVersion=U.unchanged;
+    if(existing&&existing.status==='In review'){UI.toast('This draft is already in review.');return;}
+    U.busy=true;el.disabled=true;
     d2.status='In review';addAudit(d2,S.user.role,'Submitted version '+d2.versions.length+' for approval');
     S.saveDoc(d2).then(function(){
       BG.session.clear();
       ss=E.freshSession();
-      try{sessionStorage.setItem('bg.selDoc',d2.id);}catch(e){}
+      try{sessionStorage.setItem('bg.selDoc',S.user.uid+'|'+d2.id);}catch(e){}
       location.href='workflow.html';
     }).catch(function(e){
+      U.busy=false;el.disabled=false;
       d2.status=previousStatus==='In review'?'Draft':previousStatus;
-      d2.versions.pop();d2.audit.splice(Math.max(0,d2.audit.length-2),2);
+      if(!unchangedVersion){d2.versions.pop();d2.audit.splice(Math.max(0,d2.audit.length-2),2);}else d2.audit.pop();
       persist();
       UI.toast('Submission failed: '+(e&&e.message||'Please try again.'));
     });
@@ -326,8 +337,11 @@ document.addEventListener('change',function(ev){
   if(!editing){UI.toast('Approved documents are locked.');ev.target.value='';return;}
   U.aiMsg='Importing '+file.name+'…';render();
   window.BGDocumentImport.extract(file).then(function(text){
-    ss.text=text.replace(/\r/g,'').trim();ss.title=ss.title||file.name.replace(/\.[^.]+$/,'');
-    clearTimeout(U.timer);recompute();persist();render();UI.toast('Imported '+file.name+'.');
+    text=String(text||'').replace(/\r/g,'').trim();
+    if(!text){U.aiMsg='Import failed: no readable text found (scanned PDFs need OCR). Paste the text instead.';render();UI.toast('No readable text found in '+file.name+'.');return;}
+    var cut=text.length>MAX_TEXT;if(cut)text=text.slice(0,MAX_TEXT);
+    ss.text=text;ss.title=ss.title||file.name.replace(/\.[^.]+$/,'');U.aiMsg='';
+    clearTimeout(U.timer);recompute();persist();render();UI.toast(cut?'Imported the first '+MAX_TEXT.toLocaleString()+' characters of '+file.name+'.':'Imported '+file.name+'.');
   }).catch(function(e){U.aiMsg='Import failed: '+e.message;render();UI.toast('The document could not be imported.');}).then(function(){ev.target.value='';});
 });
 

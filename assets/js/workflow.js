@@ -59,7 +59,7 @@ function detail(d){
     (why?'<div class="small muted">'+esc(why)+'</div>':'')+
     '<div><div class="sec">Comments</div>'+
       (d.comments.length?'<ul class="stack" style="list-style:none;margin:0 0 10px;padding:0;gap:10px">'+d.comments.map(function(m){return '<li><b>'+esc(m.by)+'</b> <span class="small muted">'+E.fmt(m.at)+'</span>'+ (m.quote?' <blockquote class="quote small">'+esc(m.quote.slice(0,160))+'</blockquote>':'')+'<div>'+esc(m.text)+'</div></li>';}).join('')+'</ul>':'<div class="small muted" style="margin-bottom:10px">No comments yet.</div>')+
-      '<div class="row"><input type="text" id="commentBox" placeholder="Comment as '+esc(c.role)+'" style="flex:1 1 200px"><button class="btn" data-act="comment" data-id="'+esc(d.id)+'">Comment</button></div></div>'+
+      (d.status==='Approved'?'<div class="small muted">This version is approved and locked, so comments are closed. Request a new review to discuss changes.</div>':'<div class="row"><input type="text" id="commentBox" placeholder="Comment as '+esc(c.role)+'" style="flex:1 1 200px"><button class="btn" data-act="comment" data-id="'+esc(d.id)+'">Comment</button></div>')+'</div>'+
     '<details><summary class="small muted" style="cursor:pointer">Versions ('+d.versions.length+')</summary><ul class="timeline" style="margin-top:12px">'+
       d.versions.slice().reverse().map(function(x){return '<li>v'+x.n+' · '+E.fmt(x.at)+' · '+x.summary.high+' high open, '+x.summary.disputed+' disputed, '+x.summary.resolved+' resolved</li>';}).join('')+'</ul></details>'+
     '<div><div class="sec">Audit trail</div><ul class="timeline">'+d.audit.slice().reverse().map(function(a){return '<li>'+E.fmt(a.at)+' · <b>'+esc(a.who)+'</b> '+esc(a.what)+'</li>';}).join('')+'</ul></div>'+
@@ -112,7 +112,7 @@ document.addEventListener('click',function(ev){
     else {var t=document.createElement('textarea');t.value=text;document.body.appendChild(t);t.select();document.execCommand('copy');t.remove();UI.toast('Approved text copied.');}
     return;}
   if(a==='comment'&&d){
-    var t=($('commentBox').value||'').trim();if(!t)return;
+    var t=(($('commentBox')||{}).value||'').trim();if(!t||d.status==='Approved')return;
     var commented=JSON.parse(JSON.stringify(d));
     commented.comments=commented.comments||[];commented.comments.push({by:c.role,text:t,at:new Date().toISOString()});addAudit(commented,c.role,'Commented');
     S.saveDoc(commented).then(function(){UI.drawer(detail(commented));UI.toast('Comment added.');}).catch(function(e){UI.toast('Comment failed: '+(e&&e.message||'Please try again.'));});return;}
@@ -156,7 +156,7 @@ document.addEventListener('change',function(ev){
 sh.start({
   page:'workflow',title:'Workshop',sub:'Your direct workspace for drafts, review decisions and approvals.',
   onReady:function(){
-    try{var s=sessionStorage.getItem('bg.selDoc');if(s){sessionStorage.removeItem('bg.selDoc');sel=s;}}catch(e){}
+    try{var s=sessionStorage.getItem('bg.selDoc');if(s){sessionStorage.removeItem('bg.selDoc');var cut=s.indexOf('|');if(cut>0&&s.slice(0,cut)===S.user.uid)sel=s.slice(cut+1);}}catch(e){}
     render();
     if(sel){var d=find(sel);if(d)UI.drawer(detail(d));}
   },

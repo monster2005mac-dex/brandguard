@@ -64,7 +64,7 @@ document.addEventListener('click',function(ev){
   if(a==='applyGap'){
     var txt=gap[id];if(!txt)return;var R=S.rules;
     var tgt=R.guidelines.find(function(x){return x.id===id;})||R.terms.find(function(x){return x.id===id;})||R.claims.find(function(x){return x.id===id;});
-    if(tgt){tgt.text=txt;delete gap[id];S.removeSampleEvents(id);S.saveRules(R);UI.toast('Rule '+id+' updated. Its sample dispute history was cleared.');}
+    if(tgt){tgt.text=txt;delete gap[id];S.removeSampleEvents(id);S.saveRules(R);UI.toast('Rule '+id+' updated.');}
   }
 });
 sh.start({page:'insights',title:'Insights',sub:'Where content goes wrong, and which guidelines are the real problem.',onReady:render,onData:render});

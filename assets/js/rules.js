@@ -219,13 +219,14 @@ document.addEventListener('click',function(ev){
   if(a==='saveEdit'){
     try{
       var next=JSON.parse($('editRuleText').value);next.id=id;
+      if(typeof next.pattern==='string'){try{new RegExp(next.pattern,'i');}catch(pe){throw new Error('the pattern is not a valid expression ('+pe.message+')');}}
       var list=['guidelines','terms','facts','claims'];
       for(var i=0;i<list.length;i++){var p=list[i],j=R[p].findIndex(function(x){return x.id===id});if(j>=0){R[p][j]=next;break;}}
       UI.closeModal();save();render();UI.toast(id+' updated.');
     }catch(e){UI.toast('Invalid JSON: '+e.message);}
     return;}
-  if(a==='reset'){S.resetDemo().then(function(){UI.toast('Demo data reset.');});return;}
-  if(a==='del'){['guidelines','terms','facts','claims'].forEach(function(k){R[k]=R[k].filter(function(x){return x.id!==id;});});save();UI.toast(id+' deleted.');return;}
+  if(a==='reset'){if(!window.confirm('Reset all demo data in this browser? This cannot be undone.'))return;S.resetDemo().then(function(){UI.toast('Demo data reset.');}).catch(function(e){UI.toast('Reset failed: '+(e&&e.message||'try again'));});return;}
+  if(a==='del'){if(!window.confirm('Delete '+id+'? Findings that cite it will stop appearing.'))return;['guidelines','terms','facts','claims'].forEach(function(k){R[k]=R[k].filter(function(x){return x.id!==id;});});save();UI.toast(id+' deleted.');return;}
   if(a==='evidence'){var cc=R.claims.find(function(x){return x.id===id;});if(cc){cc.evidence=v('ev-'+id);save();UI.toast(cc.evidence?'Evidence saved. Matching claims no longer need sign-off.':'Evidence cleared.');}return;}
   if(a==='submitAdd'){
     var ok=false;
@@ -241,7 +242,7 @@ sh.start({page:'rules',title:'Brand rules',sub:'The approved knowledge every fin
 
 document.addEventListener('change',function(ev){
   var t=ev.target;
-  if(t.dataset&&t.dataset.act==='setRole'){S.setUserRole(t.dataset.uid,t.value).then(function(){UI.toast('Role updated.');});return;}
+  if(t.dataset&&t.dataset.act==='setRole'){S.setUserRole(t.dataset.uid,t.value).then(function(){UI.toast('Role updated.');}).catch(function(e){UI.toast('Role change failed: '+(e&&e.message||'try again'));render();});return;}
   if(t.id==='guideFile'&&t.files&&t.files[0]){
     var gf=t.files[0];UI.toast('Reading '+gf.name+'…');
     window.BGDocumentImport.extract(gf).then(function(text){
@@ -262,6 +263,7 @@ document.addEventListener('change',function(ev){
     ['guidelines','terms','facts','claims'].forEach(function(key){
       if(!Array.isArray(pack[key]))throw new Error(key+' must be an array');
       if(pack[key].some(function(x){return !x.id;}))throw new Error(key+' contains an item without an ID');
+      pack[key].forEach(function(x){if(typeof x.pattern==='string'){try{new RegExp(x.pattern,'i');}catch(pe){throw new Error(x.id+' has an invalid pattern');}}});
     });
     if(pack.visual){
       if(!Array.isArray(pack.visual.palette)||pack.visual.palette.length>10||pack.visual.palette.some(function(x){return typeof x!=='string'||!/^#[0-9a-f]{6}$/i.test(x);}))throw new Error('visual.palette must contain up to 10 hex colors');

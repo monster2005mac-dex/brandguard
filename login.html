@@ -24,7 +24,7 @@ try{
 <body>
 <div class="auth">
   <aside class="side">
-    <div class="ph bgph" aria-hidden="true"><img data-srcs="assets/img/login.jpg|https://unsplash.com/photos/gEvMA8O6Et4/download?force=true&w=1400" alt="" width="1400" height="875" decoding="async" referrerpolicy="no-referrer"></div>
+    <div class="ph bgph" aria-hidden="true"><img data-srcs="assets/img/login.jpg" alt="" width="1400" height="875" decoding="async" referrerpolicy="no-referrer"></div>
     <a class="logo" href="index.html" style="color:inherit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="width:30px;height:30px"><path d="M12 3l7 3v5c0 5-3.4 8.2-7 10-3.6-1.8-7-5-7-10V6l7-3z"/><path d="M9 12l2.2 2.2L15.5 10"/></svg>BrandGuard</a>
     <div class="scene" id="scene" aria-hidden="true">
       <div class="sway"><div class="stage" id="stage">
@@ -37,9 +37,9 @@ try{
     </div>
     <div>
       <h2>Every flag shows its source.</h2>
-      <p style="opacity:.85;max-width:44ch">Open the workspace to review a draft, fix cited findings, and walk it through approval as a creator, reviewer or brand admin.</p>
+      <p style="opacity:.85;max-width:44ch">Review a draft, fix cited findings, and take it through approval as a creator, reviewer or brand admin.</p>
     </div>
-    <p class="small" style="opacity:.7;position:relative;z-index:1">Demo data is fictional. Built for CodeNexus India 2026.</p>
+    <p class="small" style="opacity:.7;position:relative;z-index:1">Your brand rules and review history stay in your workspace.</p>
   </aside>
   <main class="form">
     <div class="box" id="box"><a class="back-link" href="index.html">&larr; Back to website</a><div style="display:flex;align-items:center;gap:12px;padding:8px 0"><span class="spin" aria-hidden="true"></span><p class="muted">Checking your session&hellip;</p></div></div>
@@ -132,6 +132,7 @@ try{
   }
   S.init().then(function(user){
     if(user){go();return;}
+    try{localStorage.removeItem('bg.hint');}catch(e){}
     if(S.mode==='firebase')live();else demo();
   });
 })();

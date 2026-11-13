@@ -217,6 +217,7 @@ html:not(.js) .cube-nav,html:not(.js) .cube-hint{display:none}
 .auth .side .glass p{font-size:14.5px;line-height:1.7}
 .auth .side .glass mark{background:rgba(255,144,135,.28);color:#fff;text-decoration-color:#FF9087}
 .auth .side .fl{background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.3);color:#fff}
+.auth .side .fl-a{bottom:-34px;left:8px}
 .auth .side .slab{background:rgba(255,255,255,.07);border-color:rgba(255,255,255,.16)}
 .auth .side .slab span{background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.16);color:#CFE8DF}
 .auth .side h2{font-size:clamp(30px,3vw,42px)}

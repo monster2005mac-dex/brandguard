@@ -48,6 +48,21 @@ async function newCtx(browser, mode) {
     await page.waitForTimeout(300);
     assert.strictEqual(await page.locator('text=V-02').count(),0);
     assert.strictEqual(await page.locator('text=V-03').count(),0); ok('local: compliant contrast pair and alt text clear visual findings');
+    // demo mode: each role is its own person, so a Reviewer can approve what a Creator submitted
+    await page.goto(BASE + 'review.html'); await page.waitForSelector('#draft');
+    await page.fill('#title', 'Demo approval fixture'); await page.fill('#draft', 'Welcome to our helpful online service.');
+    await page.waitForTimeout(500);
+    await page.click('[data-act="submit"]'); await page.waitForURL('**/workflow.html');
+    await page.selectOption('#roleSel', 'Reviewer'); await page.waitForTimeout(300); await page.reload();
+    await page.waitForSelector('.dcard');
+    assert.strictEqual(await page.locator('#scrim.on').count(), 0, 'another role\'s selected document must not open a drawer');
+    await page.locator('.dcard').filter({ hasText: 'Demo approval fixture' }).click();
+    assert.strictEqual(await page.locator('[data-act="approve"]').isDisabled(), true, 'an attached image must be inspected first');
+    await page.check('#visualConfirm');
+    assert.strictEqual(await page.locator('[data-act="approve"]').isDisabled(), false);
+    await page.click('[data-act="approve"]');
+    await page.waitForSelector('text=Approved. This version is locked.'); ok('local: a Reviewer can approve what a Creator submitted');
+    assert.strictEqual(await page.locator('#commentBox').count(), 0); ok('local: comments are closed on an approved version');
     for (const p of ['workflow', 'rules', 'insights', 'about', 'index']) { await page.goto(BASE + p + '.html'); await page.waitForTimeout(300); }
     ok('local: all pages load');
     // admin rules page

@@ -7,6 +7,9 @@ function t(name,fn){fn();n++;console.log('ok  '+name);}
 const R=E.seedRules();
 const ids=(txt,rules)=>E.runRules(txt,rules||R).map(f=>f.ruleId);
 
+t('Super Bowl is not slang, but standalone super is',()=>{assert(!ids('We watched the Super Bowl together.').includes('G-01'));assert(ids('This is super easy.').includes('G-01'));});
+t('URLs inside HTML or markdown links are not bare URLs',()=>{assert(!ids('<a href="https://example.com/x">Our pricing page</a>').includes('G-04'));assert(!ids('See [pricing](https://example.com/x) now.').includes('G-04'));assert(ids('Go to https://example.com/x today.').includes('G-04'));});
+t('100% remote is descriptive, 100% results is still flagged',()=>{assert(!ids('We are 100% remote.').includes('G-02'));assert(ids('Get 100% results.').includes('G-02'));});
 t('flags guarantee/100%',()=>assert(ids('We guarantee 100% results.').includes('G-02')));
 t('flags student term',()=>assert(ids('Students love it.').includes('T-01')));
 t('wrong fact flagged, right fact not',()=>{assert(ids('We have 52,000 learners.').includes('F-01'));assert(!ids('We have 48,000 learners.').includes('F-01'));});
@@ -27,4 +30,11 @@ t('visual palette and WCAG contrast pass on compliant inputs',()=>{const T=E.tem
 t('canonical JSON ignores object key insertion order',()=>assert.strictEqual(E.canonicalJson({b:2,a:1}),E.canonicalJson({a:1,b:2})));
 t('brand-pack fingerprints are stable regardless of key order',()=>assert.strictEqual(E.fingerprint({b:2,a:1}),E.fingerprint({a:1,b:2})));
 t('reliability harness is 100% on bundled cases',()=>{const r=E.reliability();assert.strictEqual(r.accuracy,1);});
+t('a rule with an invalid pattern is skipped instead of crashing the review',()=>{
+  const bad=JSON.parse(JSON.stringify(R));
+  bad.terms.push({id:'T-99',avoid:'x',pattern:'(unclosed',good:'y',text:'bad'});
+  bad.claims.push({id:'C-99',label:'Bad',pattern:'[a-',evidence:'',fix:'z',text:'bad'});
+  assert.doesNotThrow(()=>E.runRules('We guarantee 100% results for students.',bad));
+  assert(ids('We guarantee 100% results.',bad).includes('G-02'),'valid rules still run');
+});
 console.log(n+' passed');

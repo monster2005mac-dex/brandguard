@@ -76,12 +76,17 @@ function initLocal(){
   shared.events=(shared.events||[]).filter(function(e){return !e.sample;});
   persistLocal();
   S.user=readLS(LS_USER);
+  if(S.user){S.user.uid=localUid(S.user.role);writeLS(LS_USER,S.user);}
+  shared.docs.forEach(function(d){if(d.owner==='local')d.owner=localUid('Creator');});
+  persistLocal();
   window.addEventListener('storage',function(ev){
     if(ev.key===LS_SHARED){var n=readLS(LS_SHARED);if(n){shared=n;emit();}}
   });
   return Promise.resolve(S.user);
 }
 function persistLocal(){writeLS(LS_SHARED,shared);}
+/* Demo mode: each role is its own person, so a Reviewer can approve what a Creator submitted. */
+function localUid(role){return 'local-'+String(role||'Creator').toLowerCase();}
 
 /* ---------- Firebase backend ---------- */
 function loadScript(src){
@@ -164,6 +169,7 @@ function listen(){
     docsQuery.onSnapshot(function(snap){
       shared.docs=snap.docs.map(function(d){var item=d.data();item.id=item.id||d.id;return item;})
         .filter(function(d){return !isLegacySample(d);})
+        .filter(function(d){return Array.isArray(d.versions)&&d.versions.length;})
         .sort(function(a,b){return a.versions[0].at<b.versions[0].at?-1:1;});
       if(S.user.role==='Admin')snap.docs.forEach(function(docSnap){
         var data=docSnap.data();
@@ -269,7 +275,7 @@ S.resetDemo=function(){
 
 /* ---------- auth ---------- */
 S.enterLocal=function(name,role){
-  S.user={uid:'local',name:name||role,email:'',role:role,photo:''};writeLS(LS_USER,S.user);setHint();return Promise.resolve(S.user);
+  S.user={uid:localUid(role),name:name||role,email:'',role:role,photo:''};writeLS(LS_USER,S.user);setHint();return Promise.resolve(S.user);
 };
 S.setRole=function(role){
   if(!S.user)return Promise.resolve();
@@ -278,7 +284,7 @@ S.setRole=function(role){
     emit();
     return Promise.resolve();
   }
-  S.user.role=role;
+  S.user.role=role;S.user.uid=localUid(role);
   writeLS(LS_USER,S.user);setHint();return Promise.resolve();
 };
 S.setUserRole=function(uid,role){
@@ -305,6 +311,7 @@ S.signOut=function(){
   var uid=S.user&&S.user.uid;
   S.user=null;
   try{if(uid)localStorage.removeItem('bg.session.v3.'+uid);}catch(e){}
+  try{sessionStorage.removeItem('bg.selDoc');sessionStorage.removeItem('bg.openDoc');}catch(e){}
   if(S.mode==='firebase'&&auth)return auth.signOut();
   try{localStorage.removeItem(LS_USER);}catch(e){}
   return Promise.resolve();

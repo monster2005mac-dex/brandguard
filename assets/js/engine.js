@@ -163,16 +163,19 @@ function factAgrees(m,target){
 }
 
 /* ---------- deterministic rule checks ---------- */
+/* A rule with an invalid pattern is skipped instead of crashing every review. */
+function safeRe(p,f){try{return new RegExp(p,f);}catch(e){return null;}}
 function runRules(text,R){
   var out=[];
   function add(f){f.source='rule';if(f.confidence==null)f.confidence=0.95;out.push(f);}
-  function iter(re,fn){re.lastIndex=0;var m;while((m=re.exec(text))!==null){if(m[0]===''){re.lastIndex++;continue;}fn(m);}}
+  function iter(re,fn){if(!re)return;re.lastIndex=0;var m;while((m=re.exec(text))!==null){if(m[0]===''){re.lastIndex++;continue;}fn(m);}}
   function span(m){return {start:m.index,end:m.index+m[0].length,quote:m[0]};}
 
   R.guidelines.forEach(function(g){
     if(g.check==='tone'){
       var slang={gonna:'it is going to',wanna:'want to',"super":'very','no-brainer':'easy choice',insane:'remarkable','awesome sauce':'excellent'};
       iter(new RegExp('\\b('+Object.keys(slang).map(escRe).join('|')+')\\b','gi'),function(m){
+        if(m[0].toLowerCase()==='super'&&/^\s+[A-Z]/.test(text.slice(m.index+m[0].length)))return;
         var s=span(m);s.ruleId=g.id;s.category='Tone';s.severity='low';
         s.why='"'+m[0]+'" is slang or an intensifier. The tone rule asks for a warm, professional voice.';
         s.suggestion=cap(m[0],slang[m[0].toLowerCase()],text,m.index);add(s);
@@ -193,7 +196,7 @@ function runRules(text,R){
         s.why='Promising a guaranteed outcome is not allowed. Outcomes depend on the learner.';
         s.suggestion='aim for ';add(s);
       });
-      iter(/\b100\s?%\s+(?=[A-Za-z])/gi,function(m){
+      iter(/\b100\s?%\s+(?!(?:remote|online|virtual|digital|organic|natural|vegan|recycl|renewable|cotton|self-paced|flexible|asynchronous|hybrid)\b)(?=[A-Za-z])/gi,function(m){
         var s=span(m);s.ruleId=g.id;s.category='Claims';s.severity='high';
         s.why='"100%" promises a complete outcome. Remove the absolute or cite approved evidence.';
         s.suggestion='';add(s);
@@ -219,7 +222,8 @@ function runRules(text,R){
         s.why='Link text should say where the link goes. "'+m[0]+'" means nothing out of context.';
         s.suggestion='Visit '+brandName(R);s.needsInput=true;add(s);
       });
-      iter(/https?:\/\/\S+/gi,function(m){
+      iter(/https?:\/\/[^\s"'<>)\]]+/gi,function(m){
+        if(/(href|src)\s*=\s*["']?$|\]\($|<$/i.test(text.slice(Math.max(0,m.index-12),m.index)))return;
         var s=span(m);s.ruleId=g.id;s.category='Accessibility';s.severity='low';
         s.why='A bare URL is difficult to understand in screen readers and assistive previews. Use meaningful destination text.';
         s.suggestion='Visit '+brandName(R);s.needsInput=true;add(s);
@@ -239,7 +243,7 @@ function runRules(text,R){
   });
 
   R.terms.forEach(function(t){
-    iter(new RegExp('\\b'+t.pattern+'\\b','gi'),function(m){
+    iter(safeRe('\\b'+t.pattern+'\\b','gi'),function(m){
       var s=span(m);s.ruleId=t.id;s.category='Terminology';s.severity='medium';
       var rep=m[0].replace(new RegExp(t.pattern,'i'),t.good);
       s.suggestion=cap(m[0],rep,text,m.index);
@@ -250,7 +254,7 @@ function runRules(text,R){
   R.facts.forEach(function(f){
     var st=factStatus(f);
     var re=factPattern(f);
-    if(!re&&f.pattern)re=new RegExp(f.pattern,'gi');
+    if(!re&&f.pattern)re=safeRe(f.pattern,'gi');
     if(!re)return;
     iter(re,function(m){
       var s=span(m);s.ruleId=f.id;s.category='Facts';
@@ -271,7 +275,7 @@ function runRules(text,R){
 
   R.claims.forEach(function(c){
     if(c.evidence&&c.evidence.trim())return;
-    iter(new RegExp(c.pattern,'gi'),function(m){
+    iter(safeRe(c.pattern,'gi'),function(m){
       var s=span(m);s.ruleId=c.id;s.category='Claims';s.severity='high';s.reviewerOnly=true;
       s.why=c.label+' claim with no evidence on file. '+c.text;
       s.suggestion=cap(m[0],c.fix,text,m.index);add(s);
