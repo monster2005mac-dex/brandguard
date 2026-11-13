@@ -7,7 +7,7 @@ var U={open:null,aiBusy:false,aiMsg:'',timer:null,filter:'all',busy:false};
 var $=function(id){return document.getElementById(id);};
 var TYPES=['LinkedIn post','Web page','Email','Press note','Ad copy'];
 
-function persist(){BG.session.save({docId:ss.docId,title:ss.title,type:ss.type,intent:ss.intent,text:ss.text,ai:ss.ai,disputed:ss.disputed,resolved:ss.resolved,aiMeta:ss.aiMeta});}
+function persist(){BG.session.save({docId:ss.docId,title:ss.title,type:ss.type,intent:ss.intent,text:ss.text,ai:ss.ai,disputed:ss.disputed,resolved:ss.resolved,aiMeta:ss.aiMeta,image:ss.image||null,visualDisputed:ss.visualDisputed||{}});}
 
 function recompute(){
   var R=S.rules,rf=E.runRules(ss.text,R),af=[];
@@ -24,6 +24,11 @@ function recompute(){
     f.status=ss.disputed[f.key]?'disputed':'open';
     f.reason=ss.disputed[f.key]||'';
   });
+  E.visualChecks(ss.image,S.rules).forEach(function(f){
+    f.visual=true;f.start=ss.text.length;f.end=ss.text.length;f.key=f.ruleId+'|'+f.quote.toLowerCase();
+    f.status=(ss.visualDisputed||{})[f.key]?'disputed':'open';f.reason=(ss.visualDisputed||{})[f.key]||'';
+    all.push(f);
+  });
   ss.findings=all;
 }
 function ruleText(id){var r=E.allRules(S.rules).find(function(x){return x.id===id;});return r?r.text:'';}
@@ -36,7 +41,7 @@ function currentDoc(){return ss.docId?S.visibleDocs().find(function(d){return d.
 
 /* ---------- views ---------- */
 function markedHtml(){
-  var t=ss.text,f=ss.findings||[],out='',pos=0;
+  var t=ss.text,f=(ss.findings||[]).filter(function(x){return !x.visual;}),out='',pos=0;
   if(!t.trim())return '<span class="muted">Nothing to review yet.</span>';
   f.forEach(function(x,i){
     out+=esc(t.slice(pos,x.start));
@@ -51,7 +56,7 @@ function ringHtml(sc){
 }
 function findingsHtml(){
   var f=ss.findings||[],sm=sumry(),sc=E.score(f);
-  var label=sc>=85?'Ready to submit':sc>=60?'Needs work':'Not ready';
+  var label=E.readinessLabel(f);
   var counts={all:f.length,high:f.filter(function(x){return x.severity==='high';}).length,medium:f.filter(function(x){return x.severity==='medium';}).length,low:f.filter(function(x){return x.severity==='low';}).length};
   var head='<div class="panel"><div class="ready">'+ringHtml(sc)+'<div><div class="sec">Brand readiness</div><h2>'+label+'</h2><p class="small muted" style="margin-top:2px">'+
     (sm.open.length?E.plural(sm.open.length,'open finding')+'. '+(sm.high.length?E.plural(sm.high.length,'high-severity item')+' must be fixed or disputed before you can submit.':'No high-severity items.'):'Every checked rule passes.')+
@@ -64,17 +69,44 @@ function findingsHtml(){
     ss.resolved.slice().reverse().map(function(r){return '<li><span class="chip">'+esc(r.ruleId)+'</span> '+esc(r.outcome)+': '+E.diffHtml(r.quote,r.replacement)+'</li>';}).join('')+'</ul></details>':'';
   return head+'<div style="margin-top:16px">'+body+'</div>'+ai+res;
 }
+function visualStatusHtml(){
+  var findings=(ss.findings||[]).filter(function(f){return f.visual;});
+  return findings.length?'<div class="stack">'+findings.map(function(f){var index=ss.findings.indexOf(f);return '<article class="fcard '+f.severity+(f.status==='disputed'?' disputed':'')+'"><div class="row"><span class="pill '+f.severity+'">'+esc(f.severity)+'</span><span class="chip">'+esc(f.ruleId)+'</span><b>'+esc(f.quote)+'</b></div><p>'+esc(f.why)+'</p>'+(f.status==='disputed'?'<div class="note">Disputed: '+esc(f.reason)+'</div>':'')+'<button class="btn sm" data-act="jump" data-i="'+index+'">View details</button></article>';}).join('')+'</div>':'<div class="note">No visual findings for the current image and inputs.</div>';
+}
+function visualInputHtml(){
+  var image=ss.image,colors=image&&image.colors||[];
+  return '<section class="panel"><div class="row" style="justify-content:space-between"><div><h2>Image and visual review</h2><p class="small muted">Attach one PNG or JPG. BrandGuard checks dominant colors, optional text contrast, and alt text.</p></div>'+
+    (image?'<button class="btn sm danger" data-act="removeImage">Remove image</button>':'')+'</div>'+
+    '<div class="row" style="margin-top:10px"><label class="btn sm" for="imageFile">Choose PNG or JPG</label><input id="imageFile" type="file" accept="image/png,image/jpeg" hidden><span class="small muted">Up to 10 MB; optimized before saving.</span></div>'+
+    (image?'<div class="stack" style="margin-top:14px"><div><img src="'+esc(image.dataUrl)+'" alt="'+esc(image.alt||'')+'" style="max-width:100%;max-height:300px;object-fit:contain;border-radius:12px"><div class="small muted">'+esc(image.name)+' · '+image.width+'×'+image.height+'</div></div>'+
+      '<div class="field"><label for="imageAlt">Alt text</label><input id="imageAlt" type="text" maxlength="500" value="'+esc(image.alt||'')+'" placeholder="Describe the information this image conveys"></div>'+
+      '<label class="row small"><input id="imageHasText" type="checkbox"'+(image.hasText?' checked':'')+'> This image contains text that needs a contrast check</label>'+
+      (image.hasText?'<div class="row"><div class="field"><label for="imageForeground">Text color</label><input id="imageForeground" type="color" value="'+esc(image.foreground||'#000000')+'"></div><div class="field"><label for="imageBackground">Background color</label><input id="imageBackground" type="color" value="'+esc(image.background||colors[0]||'#FFFFFF')+'"></div></div>':'')+
+      (colors.length?'<div><div class="sec">Detected dominant colors</div><div class="row">'+colors.map(function(c){return '<button type="button" class="pill neutral" data-act="visualColor" data-color="'+esc(c)+'" title="Use '+esc(c)+' as the text background"><i style="display:inline-block;width:14px;height:14px;background:'+esc(c)+';border-radius:50%;vertical-align:middle;margin-right:5px"></i>'+esc(c)+'</button>';}).join('')+'</div><div class="small muted">Select a detected swatch to use it as the contrast-check background color.</div></div>':'')+
+      '<div id="visualStatus">'+visualStatusHtml()+'</div>'+
+      '</div>':'<div class="empty" style="margin-top:12px">No image attached. Add one to check brand colors, image description, and contrast if it contains text.</div>')+
+    '</section>';
+}
 function cardHtml(f,i){
   var c=sh.can(),open=U.open&&U.open.key===f.key?U.open.mode:null,dis=f.status==='disputed';
+  var certainty=f.source==='ai'?'Combined confidence '+Math.round(f.confidence*100)+'% · Gemini '+Math.round((f.modelConfidence==null?f.confidence:f.modelConfidence)*100)+'% · rule support '+Math.round((f.relevanceConfidence==null?f.confidence:f.relevanceConfidence)*100)+'% · agreement '+Math.round((f.agreement==null?1:f.agreement)*100)+'%':'Exact rule match · '+Math.round(f.confidence*100)+'%';
   var h='<article class="fcard '+(dis?'disputed ':'')+f.severity+'" id="card-'+i+'">'+
     '<div class="row" style="justify-content:space-between;margin-bottom:10px"><div class="row"><span class="pill '+f.severity+'">'+f.severity+'</span><span class="small muted">'+esc(f.category)+'</span><span class="chip">'+esc(f.ruleId)+'</span>'+(f.reviewerOnly?'<span class="pill brand">Reviewer sign-off</span>':'')+'</div>'+
-    '<span class="small muted" title="How sure the check is">'+(f.source==='ai'?'Gemini, source verified':'Rule check')+' · '+E.confLabel(f)+'</span></div>'+
+    '<span class="small muted" title="Confidence combines Gemini certainty and the independent rule-support check">'+esc(certainty)+' · '+E.confLabel(f)+'</span></div>'+
     '<div class="stack" style="gap:10px">'+
     '<div><div class="sec">Flagged text</div><span class="quote">'+esc(f.quote)+'</span></div>'+
     '<div><div class="sec">Why</div>'+esc(f.why)+'</div>'+
     '<div class="src"><div class="sec">Source</div><span class="mono">'+esc(f.ruleId)+'</span> '+esc(ruleText(f.ruleId))+'</div>';
   if(dis){
-    h+='<div class="note">Disputed: '+esc(f.reason)+'</div>'+(c.edit?'<div><button class="btn sm" data-act="reopen" data-i="'+i+'">Reopen</button></div>':'');
+    h+='<div class="note">Disputed: '+esc(f.reason)+'</div>'+(c.edit?'<div><button class="btn sm" data-act="'+(f.visual?'visualReopen':'reopen')+'" data-i="'+i+'">Reopen</button></div>':'');
+  }else if(f.visual){
+    h+='<div class="note">Update the image, alt text, or selected contrast colors above, then rerun review. Visual findings are recalculated from those inputs.</div>';
+    if(open==='dispute'){
+      h+='<div class="field"><label for="visualReasonBox">Why should this visual finding be reviewed as an exception?</label><textarea id="visualReasonBox" rows="2"></textarea></div>'+
+        '<div class="row"><button class="btn sm danger" data-act="visualDisputeApply" data-i="'+i+'">Dispute with reason</button><button class="btn sm" data-act="cancel">Cancel</button></div>';
+    }else{
+      h+='<div class="row"><button class="btn sm danger" data-act="visualDispute" data-i="'+i+'"'+(c.edit?'':' disabled')+'>Dispute</button></div>';
+    }
   }else{
     h+='<div><div class="sec">Suggested fix</div><div class="diff">'+(f.adviceOnly?(f.source==='ai'&&f.suggestion?esc(f.suggestion):'No automatic rewrite. Edit the text yourself or dispute with a reason.'):E.diffHtml(f.quote,f.suggestion))+'</div></div>';
     if(open==='edit'){
@@ -103,6 +135,7 @@ function render(){
       '<div class="field" style="flex:1 1 150px"><label for="ctype">Content type</label><select id="ctype"'+(canEdit?'':' disabled')+'>'+TYPES.map(function(t){return '<option'+(t===ss.type?' selected':'')+'>'+t+'</option>';}).join('')+'</select></div></div>'+
       '<div class="field"><label for="intent">Intent <span class="muted">(optional)</span></label><input type="text" id="intent" placeholder="What should this content achieve?" value="'+esc(ss.intent||'')+'"'+(canEdit?'':' disabled')+'></div>'+
       '<div class="field"><label for="draft">Content to review</label><textarea id="draft" spellcheck="false"'+(canEdit?'':' readonly')+'></textarea></div>'+
+      (canEdit?visualInputHtml():(doc&&doc.image?'<section class="panel"><h2>Attached image</h2><img src="'+esc(doc.image.dataUrl)+'" alt="'+esc(doc.visual&&doc.visual.alt||'')+'" style="max-width:100%;max-height:300px;object-fit:contain;border-radius:12px"></section>':''))+
       '<div class="row"><button class="btn sm" data-act="import">Import text / DOCX / PDF</button><input type="file" id="importFile" accept=".txt,.md,.docx,.pdf,text/plain" hidden>'+
         '<button class="btn sm ghost" data-act="commentSelection"'+(canEdit?'':' disabled')+'>Comment on selected text</button></div>'+
       '<div class="row"><button class="btn primary" data-act="run">Run review</button>'+
@@ -136,10 +169,13 @@ function saveVersion(skipSave){
   recompute();var sm=sumry(),role=S.user.role;
   var summary={high:sm.high.length,disputed:sm.disputed.length,resolved:ss.resolved.length,
     openList:sm.open.slice(0,8).map(function(x){return {ruleId:x.ruleId,severity:x.severity,quote:x.quote};}),
-    disputedList:sm.disputed.map(function(x){return {ruleId:x.ruleId,quote:x.quote,reason:x.reason};})};
+    disputedList:sm.disputed.map(function(x){return {ruleId:x.ruleId,quote:x.quote,reason:x.reason};}),
+    rulesFingerprint:E.fingerprint(S.rules),checkSnapshot:E.checkSnapshot(ss.text,S.rules),visualSnapshot:E.visualSnapshot(ss.image)};
   var d=currentDoc();
   if(!d){d={id:'d-'+Date.now(),title:ss.title.trim(),type:ss.type,status:'Draft',versions:[],comments:[],audit:[],owner:S.user.uid};ss.docId=d.id;}
   d.title=ss.title.trim();d.type=ss.type;d.intent=ss.intent||'';
+  d.image=ss.image?{dataUrl:ss.image.dataUrl,name:ss.image.name,width:ss.image.width,height:ss.image.height}:null;
+  d.visual=E.visualSnapshot(ss.image);
   var n=d.versions.length+1;
   d.versions.push({n:n,text:ss.text,at:new Date().toISOString(),by:role,summary:summary});
   addAudit(d,role,'Saved version '+n);
@@ -152,7 +188,7 @@ function saveVersion(skipSave){
 }
 function runAI(){
   if(!ss.text.trim()||U.aiBusy)return;
-  U.aiBusy=true;U.aiMsg='Gemini is reading the draft against '+E.allRules(S.rules).length+' brand rules. This can take up to a minute.';render();
+  U.aiBusy=true;ss.ai=[];ss.aiMeta='';recompute();U.aiMsg='Gemini is reading the draft against '+E.allRules(S.rules).length+' brand rules. This can take up to a minute.';render();
   var rules=E.allRules(S.rules).map(function(r){return {id:r.id,type:r.kind,rule:r.text};});
   var already=ss.findings.filter(function(f){return f.source==='rule';}).map(function(f){return {ruleId:f.ruleId,quote:f.quote};});
   var prompt='You are a brand-compliance reviewer. Review the DRAFT only against the BRAND RULES below. Do not invent rules.\n\nBRAND RULES (JSON):\n'+JSON.stringify(rules)+
@@ -161,22 +197,36 @@ function runAI(){
     '\n\nFind judgement issues the exact checks miss: tone that is too casual or pushy, claims that imply a guarantee or ranking without using the exact words, meaning that contradicts an approved fact or rule.\n'+
     'Reply with only a JSON array. Each item: {"ruleId": one id from BRAND RULES, "quote": text copied EXACTLY from the DRAFT, "issue": one sentence, "suggestion": replacement for the quote that keeps the writer\'s intent, "severity": "high"|"medium"|"low", "confidence": number from 0 to 1}. If nothing else is wrong reply [].';
   BG.ai.json(prompt).then(function(data){
-    var list=Array.isArray(data)?data:[],kept=[],dropped=0,dup=0;
+    var list=Array.isArray(data)?data:[],candidates=[],dropped=0,dup=0;
     var cat=E.allRules(S.rules);
     list.forEach(function(it){
       var rule=it&&cat.find(function(r){return r.id===String(it.ruleId);});
       var q=it&&typeof it.quote==='string'?it.quote:'',idx=q?ss.text.indexOf(q):-1;
       if(!rule||idx<0||!String(it.issue||'').trim()){dropped++;return;}
       if(ss.findings.some(function(f){return f.source==='rule'&&f.start<idx+q.length&&idx<f.end;})){dup++;return;}
-      var sev=['high','medium','low'].indexOf(it.severity)>=0?it.severity:'medium';
       var conf=Math.max(0,Math.min(1,Number(it.confidence)));if(isNaN(conf))conf=0.5;
-      var sug=typeof it.suggestion==='string'?it.suggestion:'';
-      kept.push({ruleId:rule.id,category:rule.category,severity:sev,quote:q,why:String(it.issue),suggestion:sug,adviceOnly:!sug||sug===q,confidence:conf,reviewerOnly:(rule.category==='Claims'||rule.category==='Facts')&&sev==='high'});
+      candidates.push({rule:rule,ruleId:rule.id,category:rule.category,quote:q,issue:String(it.issue),
+        suggestion:typeof it.suggestion==='string'?it.suggestion:'',severity:['high','medium','low'].indexOf(it.severity)>=0?it.severity:'medium',
+        confidence:conf,context:ss.text.slice(Math.max(0,idx-100),Math.min(ss.text.length,idx+q.length+100))});
     });
-    ss.ai=kept;
-    ss.aiMeta='Gemini suggested '+list.length+' issue'+(list.length===1?'':'s')+'. '+kept.length+' passed source verification and are shown. '+dropped+' were dropped because they cited no real rule or quoted text that is not in the draft'+(dup?', and '+dup+' repeated an exact check':'')+'.';
-    U.aiMsg='Deep check finished.';
-  }).catch(function(e){U.aiMsg=BG.ai.errorCopy(e);}).then(function(){U.aiBusy=false;recompute();persist();render();});
+    return BG.ai.verifyCandidates(candidates,cat).then(function(verdicts){
+      var kept=[],unsupported=0;
+      candidates.forEach(function(c,index){
+        var verdict=verdicts[index];
+        if(!verdict||!verdict.supported||verdict.relevanceConfidence<0.5){unsupported++;return;}
+        kept.push({ruleId:c.ruleId,category:c.category,severity:c.severity,quote:c.quote,why:c.issue,suggestion:c.suggestion,
+          adviceOnly:!c.suggestion||c.suggestion===c.quote,confidence:verdict.confidence,modelConfidence:verdict.modelConfidence,
+          relevanceConfidence:verdict.relevanceConfidence,agreement:verdict.agreement,
+          reviewerOnly:(c.category==='Claims'||c.category==='Facts')&&c.severity==='high'});
+      });
+      ss.ai=kept;
+      ss.aiMeta='Gemini suggested '+list.length+' issue'+(list.length===1?'':'s')+'. '+kept.length+' passed quote, rule-source and independent rule-support checks. '+(dropped+unsupported)+' were dropped by verification'+(dup?', and '+dup+' repeated an exact check':'')+'.';
+      U.aiMsg='Deep check finished.';
+    });
+  }).catch(function(e){
+    ss.ai=[];ss.aiMeta='The independent rule-support check failed, so no Gemini findings were accepted.';
+    U.aiMsg=BG.ai.errorCopy(e);
+  }).then(function(){U.aiBusy=false;recompute();persist();render();});
 }
 
 document.addEventListener('click',function(ev){
@@ -206,6 +256,15 @@ document.addEventListener('click',function(ev){
   if(a==='edit'){U.open={key:ss.findings[i].key,mode:'edit'};$('findings').innerHTML=findingsHtml();return;}
   if(a==='dispute'){U.open={key:ss.findings[i].key,mode:'dispute'};$('findings').innerHTML=findingsHtml();return;}
   if(a==='cancel'){U.open=null;$('findings').innerHTML=findingsHtml();return;}
+  if(a==='visualDispute'){U.open={key:ss.findings[i].key,mode:'dispute'};$('findings').innerHTML=findingsHtml();return;}
+  if(a==='visualDisputeApply'){
+    var vf=ss.findings[i],vr=(($('visualReasonBox')||{}).value||'').trim();
+    if(vr.length<3){UI.toast('Give a short reason for the visual exception.');return;}
+    ss.visualDisputed=ss.visualDisputed||{};ss.visualDisputed[vf.key]=vr;logEvent(vf,'disputed',vr);
+    U.open=null;recompute();persist();render();return;}
+  if(a==='visualReopen'){delete ss.visualDisputed[ss.findings[i].key];recompute();persist();render();return;}
+  if(a==='visualColor'){if(ss.image&&/^#[0-9a-f]{6}$/i.test(el.dataset.color)){ss.image.background=el.dataset.color.toUpperCase();recompute();persist();render();}return;}
+  if(a==='removeImage'){ss.image=null;ss.visualDisputed={};recompute();persist();render();UI.toast('Image removed.');return;}
   if(a==='applyEdit'){
     var f2=ss.findings[i],v=$('editBox').value;
     if(!v.trim()&&f2.suggestion!==''){UI.toast('Write the replacement text first.');return;}
@@ -244,9 +303,24 @@ document.addEventListener('input',function(ev){
     U.timer=setTimeout(function(){U.timer=null;refreshPanes();persist();},350);
   }else if(t.id==='title'){ss.title=t.value;persist();}
   else if(t.id==='intent'){ss.intent=t.value;persist();}
+  else if(t.id==='imageAlt'&&ss.image){ss.image.alt=t.value;recompute();persist();var vf=$('findings'),vs=$('visualStatus');if(vf)vf.innerHTML=findingsHtml();if(vs)vs.innerHTML=visualStatusHtml();}
 });
 document.addEventListener('change',function(ev){if(ev.target.id==='ctype'&&ss){ss.type=ev.target.value;persist();}});
 document.addEventListener('change',function(ev){
+  if(!ss)return;
+  if(ev.target.id==='imageHasText'&&ss.image){ss.image.hasText=ev.target.checked;recompute();persist();render();return;}
+  if((ev.target.id==='imageForeground'||ev.target.id==='imageBackground')&&ss.image){
+    ss.image.foreground=$('imageForeground').value.toUpperCase();ss.image.background=$('imageBackground').value.toUpperCase();
+    recompute();persist();render();return;
+  }
+  if(ev.target.id==='imageFile'&&ev.target.files&&ev.target.files[0]){
+    var imageFile=ev.target.files[0];U.aiMsg='Preparing and analyzing image…';render();
+    BG.visual.prepare(imageFile).then(function(image){
+      ss.image=image;ss.visualDisputed={};U.aiMsg='Image ready. Add descriptive alt text and select the colors to check if it contains text.';
+      recompute();persist();render();
+    }).catch(function(error){U.aiMsg='';UI.toast(error&&error.message||'Image analysis failed.');render();}).then(function(){var input=$('imageFile');if(input)input.value='';});
+    return;
+  }
   if(ev.target.id!=='importFile'||!ev.target.files||!ev.target.files[0]||!ss)return;
   var file=ev.target.files[0],editing=!currentDoc()||currentDoc().status!=='Approved';
   if(!editing){UI.toast('Approved documents are locked.');ev.target.value='';return;}
@@ -265,7 +339,8 @@ sh.start({
     if(role==='Reviewer'){location.replace('workflow.html');return;}
     ss=BG.session.load();
     var pend=null;try{pend=sessionStorage.getItem('bg.openDoc');sessionStorage.removeItem('bg.openDoc');}catch(e){}
-    if(pend){var d=S.visibleDocs().find(function(x){return x.id===pend;});if(d){var v=d.versions[d.versions.length-1];ss={docId:d.id,title:d.title,type:d.type,intent:d.intent||'',text:v.text,ai:[],disputed:{},resolved:[],aiMeta:null};}}
+    if(pend){var d=S.visibleDocs().find(function(x){return x.id===pend;});if(d){var v=d.versions[d.versions.length-1];ss={docId:d.id,title:d.title,type:d.type,intent:d.intent||'',text:v.text,ai:[],disputed:{},resolved:[],aiMeta:null,image:d.image?Object.assign({},d.visual||{},{dataUrl:d.image.dataUrl,hash:d.visual&&d.visual.imageHash,name:d.image.name,width:d.image.width,height:d.image.height}):null,visualDisputed:{}};(v.summary&&v.summary.disputedList||[]).forEach(function(item){if(/^V-/.test(item.ruleId))ss.visualDisputed[item.ruleId+'|'+String(item.quote||'').toLowerCase()]=item.reason;});}}
+    ss.image=ss.image||null;ss.visualDisputed=ss.visualDisputed||{};
     recompute();render();
   },
   onData:function(){if(ss&&!U.timer&&!document.activeElement.matches('#draft,#title,#editBox,#reasonBox')){recompute();render();}},

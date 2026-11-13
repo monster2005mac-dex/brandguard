@@ -2,7 +2,8 @@
    Pure functions, no DOM and no network. Exposed as BG.engine. */
 (function(){
 'use strict';
-var BG=window.BG=window.BG||{};
+var root=typeof window!=='undefined'?window:globalThis;
+var BG=root.BG=root.BG||{};
 var NOW=new Date();
 var TODAY=NOW.toISOString().slice(0,10);
 
@@ -36,6 +37,7 @@ function seedRules(){
       {id:'F-01',subject:'Learners',value:'48000',display:'48,000 learners',pattern:'(\\d[\\d,]*)\\+?\\s+learners',owner:'Content operations',expires:isoPlus(365)},
       {id:'F-03',subject:'Courses',value:'120',display:'120 courses',pattern:'(\\d[\\d,]*)\\s+courses',owner:'Content operations',expires:isoPlus(365)}
     ],
+    visual:{palette:[],contrast:4.5,paletteTolerance:25},
     claims:[
       {id:'C-01',pattern:'(?:India|#1\\s+(?:learning\\s+)?platform|number one)',label:'Ranking',fix:'a leading platform in India',text:'Ranking claims need supporting evidence.'}
     ]
@@ -59,7 +61,7 @@ function seedDocs(){
   return [];
 }
 function seedAll(){return {rules:seedRules(),docs:seedDocs(),events:seedEvents()};}
-function freshSession(){return {docId:null,title:'Untitled draft',type:'LinkedIn post',intent:'',text:SAMPLE_DRAFT,ai:[],disputed:{},resolved:[],aiMeta:null};}
+function freshSession(){return {docId:null,title:'Untitled draft',type:'LinkedIn post',intent:'',text:SAMPLE_DRAFT,ai:[],disputed:{},resolved:[],aiMeta:null,image:null,visualDisputed:{}};}
 
 /* ---------- rule catalogue (what a finding can cite) ---------- */
 function factStatus(f){return f.expires<TODAY?'expired':(f.expires<=isoPlus(30)?'soon':'current');}
@@ -69,11 +71,95 @@ function allRules(R){
   R.terms.forEach(function(t){out.push({id:t.id,kind:'terminology',category:'Terminology',text:t.text});});
   R.facts.forEach(function(f){out.push({id:f.id,kind:'approved fact',category:'Facts',text:f.subject+' is '+f.display+' (owner: '+f.owner+', valid to '+f.expires+')'});});
   R.claims.forEach(function(c){out.push({id:c.id,kind:'claims register',category:'Claims',text:c.text});});
+  out.push({id:'V-01',kind:'visual rule',category:'Visual identity',text:'Use colors from the approved brand palette.'});
+  out.push({id:'V-02',kind:'accessibility rule',category:'Accessibility',text:'Text over images must meet WCAG contrast ratio '+((R.visual&&R.visual.contrast)||4.5)+':1.'});
+  out.push({id:'V-03',kind:'accessibility rule',category:'Accessibility',text:'Every uploaded image needs descriptive alt text.'});
   return out;
 }
 function nextId(prefix,arr){
   var max=0;arr.forEach(function(x){var n=parseInt(x.id.split('-')[1],10);if(n>max)max=n;});
   return prefix+'-'+String(max+1).padStart(2,'0');
+}
+
+function numberValue(raw){
+  var m=String(raw||'').trim().match(/^([\d,]+(?:\.\d+)?)(?:\s*(k|thousand|lakhs?|lac|million|m|crore|cr))?\+?$/i);
+  if(!m)return NaN;
+  var n=Number(m[1].replace(/,/g,'')),unit=(m[2]||'').toLowerCase();
+  var scale={k:1e3,thousand:1e3,lakh:1e5,lakhs:1e5,lac:1e5,million:1e6,m:1e6,crore:1e7,cr:1e7};
+  return n*(scale[unit]||1);
+}
+function factNoun(f){
+  if(f.noun)return String(f.noun).trim();
+  var val=String(f.value||''),display=String(f.display||'');
+  var i=display.indexOf(val);
+  return i>=0?display.slice(i+val.length).trim():display.replace(/^[\d,]+(?:\.\d+)?(?:\s*(?:k|thousand|lakhs?|lac|million|m|crore|cr))?\s*/i,'').trim();
+}
+function hexRgb(hex){
+  var x=String(hex||'').trim().match(/^#?([0-9a-f]{6})$/i);
+  if(!x)return null;
+  return [parseInt(x[1].slice(0,2),16),parseInt(x[1].slice(2,4),16),parseInt(x[1].slice(4,6),16)];
+}
+function rgbLab(rgb){
+  var channels=rgb.map(function(v){v/=255;return v<=0.04045?v/12.92:Math.pow((v+0.055)/1.055,2.4);});
+  var x=(channels[0]*0.4124+channels[1]*0.3576+channels[2]*0.1805)/0.95047;
+  var y=(channels[0]*0.2126+channels[1]*0.7152+channels[2]*0.0722);
+  var z=(channels[0]*0.0193+channels[1]*0.1192+channels[2]*0.9505)/1.08883;
+  var f=function(v){return v>0.008856?Math.pow(v,1/3):7.787*v+16/116;};
+  return [116*f(y)-16,500*(f(x)-f(y)),200*(f(y)-f(z))];
+}
+function colorDistance(a,b){
+  var x=hexRgb(a),y=hexRgb(b);
+  if(!x||!y)return Infinity;
+  var p=rgbLab(x),q=rgbLab(y);
+  return Math.sqrt(Math.pow(p[0]-q[0],2)+Math.pow(p[1]-q[1],2)+Math.pow(p[2]-q[2],2));
+}
+function luminance(hex){
+  var rgb=hexRgb(hex);if(!rgb)return NaN;
+  var c=rgb.map(function(v){v/=255;return v<=0.04045?v/12.92:Math.pow((v+0.055)/1.055,2.4);});
+  return 0.2126*c[0]+0.7152*c[1]+0.0722*c[2];
+}
+function contrastRatio(foreground,background){
+  var a=luminance(foreground),b=luminance(background);
+  if(!isFinite(a)||!isFinite(b))return NaN;
+  return (Math.max(a,b)+0.05)/(Math.min(a,b)+0.05);
+}
+function visualChecks(image,R){
+  var visual=R.visual||{palette:[],contrast:4.5,paletteTolerance:25},colors=image&&Array.isArray(image.colors)?image.colors:[],findings=[];
+  if(!image)return findings;
+  if(!String(image.alt||'').trim())findings.push({ruleId:'V-03',category:'Accessibility',severity:'medium',quote:'Uploaded image',why:'Add descriptive alt text so screen-reader users understand the image.',suggestion:'',adviceOnly:true,confidence:0.99});
+  var palette=(visual.palette||[]).filter(function(c){return !!hexRgb(c);});
+  var tolerance=Number(visual.paletteTolerance)||25;
+  var mismatch=colors.find(function(c){return palette.length&&!palette.some(function(approved){return colorDistance(c,approved)<=tolerance;});});
+  if(mismatch)findings.push({ruleId:'V-01',category:'Visual identity',severity:'medium',quote:mismatch.toUpperCase(),
+    why:'This dominant image color is outside the approved palette. Nearest approved color is '+palette.slice().sort(function(a,b){return colorDistance(mismatch,a)-colorDistance(mismatch,b);})[0]+'.',
+    suggestion:'Use an approved brand color or confirm with the brand owner.',adviceOnly:true,confidence:0.9});
+  if(image.hasText){
+    var ratio=contrastRatio(image.foreground,image.background),minimum=Number(visual.contrast)||4.5;
+    if(isFinite(ratio)&&ratio<minimum)findings.push({ruleId:'V-02',category:'Accessibility',severity:'high',quote:image.foreground+' on '+image.background,
+      why:'Text/background contrast is '+ratio.toFixed(2)+':1; WCAG AA requires at least '+minimum+':1 for normal text.',
+      suggestion:'Choose a higher-contrast text or background color.',adviceOnly:true,confidence:0.99,contrast:ratio});
+  }
+  return findings;
+}
+function factPattern(f){
+  var noun=factNoun(f);
+  if(!noun)return null;
+  var number='(?:[\\d,]+(?:\\.\\d+)?)(?:\\s*(?:k|thousand|lakhs?|lac|million|m|crore|cr))?\\+?';
+  return new RegExp('(?:\\b(over|above|more than|at least|approximately|about|around|nearly|almost|up to|under|less than|below|between)\\s+)?('+number+')(?:\\s*(?:-|–|—|to|and)\\s*('+number+'))?\\s+'+escRe(noun)+'\\b','gi');
+}
+function factAgrees(m,target){
+  var qualifier=String(m[1]||'').toLowerCase(),a=numberValue(m[2]),b=m[3]?numberValue(m[3]):NaN;
+  if(/\+$/.test(m[2]))qualifier='at least';
+  if(!isFinite(a)||!isFinite(target))return false;
+  if(isFinite(b))return target>=Math.min(a,b)&&target<=Math.max(a,b);
+  if(qualifier==='over'||qualifier==='above'||qualifier==='more than')return target>a;
+  if(qualifier==='at least')return target>=a;
+  if(qualifier==='up to'||qualifier==='under'||qualifier==='less than'||qualifier==='below')return target<=a;
+  if(qualifier==='about'||qualifier==='approximately'||qualifier==='around'||qualifier==='nearly'||qualifier==='almost'){
+    var raw=String(m[2]),step=/\b(?:k|thousand|lakhs?|lac|million|m|crore|cr)\s*$/i.test(raw)?Math.pow(10,Math.floor(Math.log10(a))):Math.pow(10,Math.max(0,Math.floor(Math.log10(a))-1));
+    return Math.abs(target-a)<=Math.max(a*0.05,step/2);
+  }
+  return target===a;
 }
 
 /* ---------- deterministic rule checks ---------- */
@@ -162,15 +248,17 @@ function runRules(text,R){
   });
 
   R.facts.forEach(function(f){
-    var norm=function(x){return String(x).replace(/[^\d.]/g,'');};
     var st=factStatus(f);
-    iter(new RegExp(f.pattern,'gi'),function(m){
+    var re=factPattern(f);
+    if(!re&&f.pattern)re=new RegExp(f.pattern,'gi');
+    if(!re)return;
+    iter(re,function(m){
       var s=span(m);s.ruleId=f.id;s.category='Facts';
-      var found=m[1]||'';
-      if(norm(found)!==norm(f.value)){
+      var approved=numberValue(f.value);
+      if(!factAgrees(m,approved)){
         s.severity='high';
-        s.why='Approved '+f.subject.toLowerCase()+' is '+f.display+'. The draft says '+found+'.'+(st==='expired'?' This fact expired on '+f.expires+', so the owner ('+f.owner+') must confirm the current value.':'');
-        s.suggestion=m[0].replace(found,f.value);
+        s.why='Approved '+f.subject.toLowerCase()+' is '+f.display+'. The draft says '+m[0].trim()+'.'+(st==='expired'?' This fact expired on '+f.expires+', so the owner ('+f.owner+') must confirm the current value.':'');
+        s.suggestion=f.display;
         s.reviewerOnly=st==='expired';
         add(s);
       }else if(st==='expired'){
@@ -203,6 +291,34 @@ function score(findings){
   var pen=0;
   findings.forEach(function(f){if(f.status!=='open')return;pen+=f.severity==='high'?10:f.severity==='medium'?4:2;});
   return Math.max(0,100-pen);
+}
+function readinessLabel(findings){
+  if(findings.some(function(f){return f.status==='open'&&f.severity==='high';}))return 'Action required';
+  var value=score(findings);
+  return value>=85?'Ready to submit':value>=60?'Needs work':'Not ready';
+}
+function canonicalJson(value){
+  if(value===null||typeof value!=='object')return JSON.stringify(value);
+  if(Array.isArray(value))return '['+value.map(canonicalJson).join(',')+']';
+  return '{'+Object.keys(value).sort().map(function(key){return JSON.stringify(key)+':'+canonicalJson(value[key]);}).join(',')+'}';
+}
+function fingerprint(value){
+  var text=typeof value==='string'?value:canonicalJson(value),a=0x811c9dc5,b=0x9e3779b9;
+  for(var i=0;i<text.length;i++){
+    var code=text.charCodeAt(i);
+    a=Math.imul(a^code,0x01000193);
+    b=Math.imul(b^code,0x85ebca6b);
+  }
+  return (a>>>0).toString(16).padStart(8,'0')+(b>>>0).toString(16).padStart(8,'0');
+}
+function checkSnapshot(text,R){
+  return runRules(text,R).map(function(f){return {ruleId:f.ruleId,quote:f.quote,severity:f.severity,start:f.start,end:f.end,why:f.why};});
+}
+function visualSnapshot(image){
+  if(!image)return null;
+  return {colors:(image.colors||[]).slice(),alt:String(image.alt||''),hasText:!!image.hasText,
+    foreground:String(image.foreground||'#000000').toUpperCase(),background:String(image.background||'#FFFFFF').toUpperCase(),
+    imageHash:String(image.imageHash||image.hash||'')};
 }
 
 /* ---------- word diff, grouped into one deletion and one insertion per change ---------- */
@@ -273,7 +389,81 @@ function reliability(){
  return {tests:tests.length,precision:tp/(tp+fp||1),recall:tp/(tp+fn||1),accuracy:matched/tests.length};
 }
 
+function accuracyDataset(R){
+  var pairs=[],tone=R.guidelines.find(function(g){return g.check==='tone';}),absolute=R.guidelines.find(function(g){return g.check==='absolutes';}),
+    readability=R.guidelines.find(function(g){return g.check==='readability';}),a11y=R.guidelines.find(function(g){return g.check==='a11y';});
+  function pair(category,positive,id,negative,negativeId){pairs.push({category:category,positive:positive,expected:id||null,negative:negative,negativeExpected:negativeId||null});}
+  ['gonna','wanna','super','insane','awesome sauce'].forEach(function(word,i){
+    pair('Tone','We are '+word+' help every learner.',tone&&tone.id,'We plan to help every learner.');
+  });
+  [
+    ['We guarantee results.','We aim to deliver useful results.'],
+    ['We guarantee 100% success.','We work toward strong outcomes.'],
+    ['Our course guarantees your success.','Our course supports your progress.'],
+    ['This is risk-free.','This is easy to try.'],
+    ['Get 100% results today.','Get helpful results at your own pace.']
+  ].forEach(function(x){pair('Claims',x[0],absolute&&absolute.id,x[1]);});
+  [
+    'We offer a learning program for people who want to build useful skills through regular practice and steady guidance from experienced instructors throughout the year, with helpful feedback and extra time to practise.',
+    'Our learning platform gives people flexible access to practical lessons, helpful resources, experienced instructors, and supportive guidance as they work toward their goals, with regular feedback and extra time to practise.',
+    'The program includes clear lessons, useful exercises, friendly support, and regular opportunities to practise new skills at a pace that works for each learner, with helpful feedback and extra time to practise.',
+    'Learners can explore practical courses, get support from instructors, practise important skills, and make steady progress with flexible study options throughout the year, with helpful feedback and extra time to practise.'
+  ].forEach(function(x){pair('Readability',x,readability&&readability.id,'Our learners can study at their own pace.');});
+  [
+    ['<img src="course.jpg">','<img src="course.jpg" alt="Online course lesson">'],
+    ['![](course.jpg)','![Online course lesson](course.jpg)'],
+    ['Click here to see the course.','Visit the course page for details.'],
+    ['Read more about the course.','Explore the course details.']
+  ].forEach(function(x){pair('Accessibility',x[0],a11y&&a11y.id,x[1]);});
+  var termRules=R.terms||[];
+  for(var ti=0;ti<4;ti++){
+    var t=termRules[ti%Math.max(termRules.length,1)];
+    var avoid=t&&(t.avoid||t.pattern)||'account';
+    pair('Terminology','Our '+avoid+' can access the course.',t&&t.id,
+      t?'Our '+String(t.good||'').replace('$1','')+' can access the course.':'Our members can access the course.');
+  }
+  var facts=R.facts||[];
+  for(var fi=0;fi<4;fi++){
+    var f=facts[fi%Math.max(facts.length,1)],n=f?numberValue(f.value):NaN,noun=f?factNoun(f):'learners';
+    var wrong=isFinite(n)?String(Math.round(n*1.25)): '60,000';
+    pair('Facts',f?wrong+' '+noun:'60,000 learners',f&&f.id,
+      f?(n>=1000?'About '+Math.round(n/10000)*10+'k '+noun:f.display):'Our learners can study at their own pace.',
+      f&&factStatus(f)==='expired'?f.id:null);
+  }
+  var claimRules=R.claims||[];
+  for(var ci=0;ci<4;ci++){
+    var c=claimRules[ci%Math.max(claimRules.length,1)],candidate='';
+    if(c){
+      var words=['India’s #1 platform','number one platform','India','best in class','award-winning'];
+      candidate=words.find(function(w){try{return new RegExp(c.pattern,'i').test(w);}catch(e){return false;}})||'India';
+    }
+    pair('Claims',c?'Our '+candidate+' learning platform serves customers.':'Our learning platform serves customers.',c&&!c.evidence?c.id:null,
+      'Our learning platform supports customers.');
+  }
+  var cases=[];
+  pairs.forEach(function(p){
+    cases.push({text:p.positive,expected:p.expected,category:p.category});
+    cases.push({text:p.negative,expected:p.negativeExpected||null,category:p.category});
+  });
+  return cases;
+}
+function accuracyReport(R){
+  var cases=accuracyDataset(R),tp=0,fp=0,fn=0;
+  cases.forEach(function(test){
+    var actual=runRules(test.text,R).map(function(f){return f.ruleId;});
+    if(test.expected){
+      if(actual.indexOf(test.expected)>=0)tp++;else fn++;
+      actual.forEach(function(id){if(id!==test.expected)fp++;});
+    }else fp+=actual.length;
+  });
+  return {tests:cases.length,positives:cases.filter(function(x){return !!x.expected;}).length,tp:tp,fp:fp,fn:fn,
+    precision:tp/(tp+fp||1),recall:tp/(tp+fn||1)};
+}
+
 BG.engine={TODAY:TODAY,isoPlus:isoPlus,esc:esc,escRe:escRe,fmt:fmt,plural:plural,clone:clone,SAMPLE_DRAFT:SAMPLE_DRAFT,
   seedRules:seedRules,templateRules:templateRules,brandName:brandName,seedAll:seedAll,freshSession:freshSession,factStatus:factStatus,allRules:allRules,nextId:nextId,
-  runRules:runRules,confLabel:confLabel,score:score,diffHtml:diffHtml,insightRows:insightRows,reliability:reliability};
+  runRules:runRules,confLabel:confLabel,score:score,readinessLabel:readinessLabel,diffHtml:diffHtml,insightRows:insightRows,reliability:reliability,
+  accuracyDataset:accuracyDataset,accuracyReport:accuracyReport,canonicalJson:canonicalJson,checkSnapshot:checkSnapshot,
+  fingerprint:fingerprint,visualChecks:visualChecks,visualSnapshot:visualSnapshot,colorDistance:colorDistance,contrastRatio:contrastRatio};
+if(typeof module!=='undefined'&&module.exports)module.exports=BG.engine;
 })();

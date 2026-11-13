@@ -223,6 +223,21 @@ S.saveDoc=function(d){
   });
   persistLocal();return Promise.resolve();
 };
+S.approveDoc=function(id,version,visualConfirmed){
+  if(S.mode!=='firebase'||!S.user)return Promise.reject(new Error('Server-verified approval requires a signed-in Firebase account.'));
+  return S.idToken().then(function(token){
+    var controller=new AbortController(),timeout=setTimeout(function(){controller.abort();},30000);
+    return fetch(cfg.approvalEndpoint||'/api/approve',{
+      method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token},
+      body:JSON.stringify({docId:id,version:version,visualConfirmed:visualConfirmed===true}),signal:controller.signal
+    }).finally(function(){clearTimeout(timeout);});
+  }).then(function(response){
+    return response.json().catch(function(){return {};}).then(function(body){
+      if(!response.ok)throw new Error(body.error||'Server verification failed. Reload and try again.');
+      return body;
+    });
+  });
+};
 S.deleteDoc=function(id){
   var d=shared.docs.find(function(x){return x.id===id;});
   if(!d)return Promise.resolve();

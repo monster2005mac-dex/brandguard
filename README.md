@@ -1,21 +1,31 @@
 # BrandGuard
 
-Pre-publication brand governance. Paste a draft, get findings that each cite the exact brand rule behind them, fix or dispute each one, and route the content through reviewer approval. CodeNexus India 2026, Round 2.
+Pre-publication brand governance. Check copy and creative against cited brand rules, resolve or dispute findings, and route exact versions through verified review and approval.
 
 **Pages:** `index.html` (landing), `login.html`, `review.html`, `workflow.html`, `rules.html`, `insights.html`, `about.html`.
 No build step. Plain HTML, CSS and JavaScript, so it also runs from a double-click.
 
-## Run it in 10 seconds (local demo mode)
-Open `index.html` in Chrome, click **Login**, pick a role. Data stays in your browser. This mode needs no setup and is fully tested.
+## Run locally
+Requirements: Node.js 20+ and npm.
+
+```sh
+npm install
+npm test
+npm run check
+npm start
+```
+
+Open http://localhost:4173. Local demo data stays in this browser; use **Login** to choose a demo role. No Firebase credentials or Gemini key are needed for deterministic checks.
 
 ## Turn on Firebase (real accounts, shared data, real-time)
+For all Round 3 server features, deploy the site/API on Vercel with Firebase as the auth/database backend. A Firebase Hosting-only deployment does not provide `/api/approve`.
 1. Go to https://console.firebase.google.com and create a project.
 2. **Build > Authentication > Get started.** Enable **Email/Password** and **Google**.
 3. **Build > Firestore Database > Create database** (production mode, region `asia-south1` is a good fit for India).
 4. **Project settings > Your apps > Web (`</>`).** Register an app and copy the config object.
 5. Paste the values into `assets/js/firebase-config.js` (`apiKey`, `authDomain`, `projectId`, `storageBucket`, `messagingSenderId`, `appId`).
 6. Publish the security rules: `npm i -g firebase-tools`, `firebase login`, `firebase init` (choose existing project; Hosting + Firestore; do not overwrite `firebase.json` or `firestore.rules`), then `firebase deploy --only firestore:rules`.
-7. Deploy the site: `firebase deploy --only hosting`. Your live link is printed. In Authentication > Settings > Authorized domains, make sure that domain is listed.
+7. For a static-only preview, you can deploy Firebase Hosting with `firebase deploy --only hosting`. That does not include `/api/approve`; use the Vercel setup below for the complete Round 3 server features.
 
 The first person to sign in seeds the demo brand pack into Firestore. Sign up with different emails and roles to see shared, real-time workflow between users.
 
@@ -34,34 +44,59 @@ The first person to sign in seeds the demo brand pack into Firestore. Sign up wi
 1. Push the project to GitHub, import it in Vercel (root directory = project root, no build command).
 2. Add environment variables:
    - `GEMINI_API_KEY`: your Google AI Studio key (secret, server only).
-   - `FIREBASE_API_KEY`: the same public web `apiKey` from `firebase-config.js`. The function uses it to verify the caller's ID token. (Alternative: `FIREBASE_SERVICE_ACCOUNT_JSON` for firebase-admin verification.)
+   - `FIREBASE_SERVICE_ACCOUNT_JSON`: a Firebase service-account JSON value. The approval endpoint uses Firebase Admin to verify reviewer roles, read the current document and rules, and commit the approval transaction. Keep this secret in Vercel only; never commit it.
+   - `FIREBASE_API_KEY`: the same public web `apiKey` from `firebase-config.js`; used by the Gemini endpoint to verify ID tokens when no service account is configured there.
    - Optional: `GEMINI_MODEL` (default `gemini-2.5-flash`), `APP_ORIGIN` (only needed if the API is called from another domain).
 3. Deploy, then add the Vercel domain in Firebase **Authentication > Settings > Authorized domains**.
-4. Publish the security rules: `firebase deploy --only firestore:rules`.
+4. Publish the security rules: `firebase deploy --only firestore:rules`. They deny direct client writes of `Approved` status.
 5. Open the site and **sign up first**: the first account becomes the workspace Admin. Everyone after is a Creator; promote Reviewers from **Brand rules > Team**.
 6. On **Brand rules**, click **Test connection**, then **Import from guidelines document**.
 
 Nothing secret is stored in Firestore or sent to the browser. The old shared "Gemini keys" feature was removed.
 
 ## Optional: Firebase Cloud Function instead of Vercel
-`functions/` contains an equivalent proxy (Blaze plan): `firebase functions:secrets:set GEMINI_API_KEY && firebase deploy --only functions`, then put its URL in `aiEndpoint`.
+`functions/` contains an optional Gemini proxy (Blaze plan): `firebase functions:secrets:set GEMINI_API_KEY && firebase deploy --only functions`, then put its URL in `aiEndpoint`. Server-verified approval still requires the Vercel `/api/approve` endpoint.
 
-## How reliability is handled
-Exact rules (terms, facts, claims, accessibility, tone) run in the browser. Gemini findings pass a verifier: each must cite a rule ID that exists and quote text that is really in the draft, or it is dropped. The screen reports how many were dropped. AI never edits or approves; a person does.
+## Round 3 improvements
+- **Measured accuracy:** Admins see precision and recall from 60 labelled drafts; results are recalculated for the current brand pack. When Gemini is configured, the same cases are evaluated through Gemini and the rule-support verifier. The built-in corpus is a regression set, not an independent real-world accuracy certification.
+- **Visual review:** Admins configure up to 10 approved palette colors and WCAG AA minimum contrast. Creators can attach a PNG/JPG; the browser samples dominant colors, checks palette distance, prompts for alt text, and checks a selected text/background color pair. The reviewer sees the exact attached image and must explicitly confirm visual inspection before approval. Image color sampling is independently repeated on the server.
+- **Server-verified approval:** Vercel verifies the Firebase ID token and reviewer role, loads the current Firestore version and brand pack, reruns the deterministic engine, rechecks image identity and dominant colors, rejects stale rules/findings or open high-severity issues, then writes an approval fingerprint and audit entry. Clients cannot directly set `Approved` in Firestore rules.
 
-## What was validated, and what was not
-- Tested in a real browser (Playwright): every page, the full creator-to-reviewer flow, role limits, rule editing, dark mode, phone width with no horizontal scroll, opening from `file://`.
-- Firebase code paths tested against an in-memory fake of the Firebase SDK (sign-up, seeding, shared saves, role change, approval, sign-out).
-## Current build
-- The deterministic rule engine, local demo workflow, brand-pack tools, document import, review report export, and responsive UI are implemented.
-- Firebase code paths and Firestore rules are written for the documented APIs. They must be live-tested with a real project before production use.
-- The deep check was not run here (it needs a valid Gemini key).
+Numeric fact checks understand common qualifiers and formats such as "over 40k", "about 50k", "1.2 lakh", ranges and a trailing plus.
 
-## Known limits (be honest with judges)
-- The role switcher is a demo feature. In production, roles would be set by an admin or custom claims, not by the user. The rules file says so.
-- Rule patterns for admin-added facts assume "number + noun" (for example "300 instructors").
-- Image analysis is roadmap work. PDF/DOCX import extracts text for review; layout and image-analysis checks are separate.
-- The demo role switcher deliberately models roles in-browser. Firebase live mode must assign production roles through account administration or custom claims.
+Gemini findings must cite a real rule ID and quote text from the draft, then pass an independent check that the cited rule actually supports the finding. The displayed confidence combines Gemini's confidence with the rule-support check and their agreement. Unsupported findings are dropped and counted. AI never edits or approves; a person does.
+
+Run the unit and verifier tests with `npm test`.
+For the browser suite, start `npm start` in one terminal and run `node tests/e2e.js` in another.
+
+## Verification and current limits
+- `npm test` runs deterministic engine/accuracy, Gemini-verifier, and server-approval tests.
+- `node tests/e2e.js` exercises browser flows using an in-memory Firebase mock; it does not replace a live Firebase/Vercel integration test.
+- `npm run check` checks JavaScript syntax. Firestore rules should be deployed and tested against the project's Firebase emulator before a production launch.
+- Gemini metrics depend on the configured model and network; no live Gemini key is included.
+- Image analysis is a practical dominant-color sample, not logo recognition, OCR-based text detection, or full-image design review. The creator selects the foreground/background pair for contrast evaluation, and the reviewer confirms they inspected the creative.
+- Approval requires `FIREBASE_SERVICE_ACCOUNT_JSON` on the Vercel deployment. If that secret or the `/api/approve` endpoint is unavailable, the document is not approved.
+- Browser demo roles and local data are for evaluation only; production identity and authorization require Firebase configuration.
+
+## Completed product features
+- Firebase email/password and Google sign-in; first workspace account becomes Admin, and later accounts start as Creators.
+- Admin-managed Reviewer/Admin roles, brand guidelines, terminology, approved facts, claims evidence, palette, and contrast threshold.
+- JSON brand-pack import/export; PDF/DOCX/TXT guideline import with Gemini draft rules reviewed before saving.
+- Draft paste/import, live deterministic checks, cited findings, suggested fixes, manual edits and disputes, readiness scoring, version history, and saved submissions.
+- Creator/reviewer workflow, passage comments, reviewer text edits, change requests, audit trail, review-report export, and approved-text copy.
+- Image attachment, dominant-color comparison, WCAG contrast check for a selected color pair, and alt-text prompt.
+- Server-verified Firebase approval with exact version/rule/findings checks and a stored approval fingerprint.
+- Insights for recurring finding categories, recent trends, expired facts, and frequently disputed rules.
+- Responsive interface, profile photos, and light/dark themes.
+
+## Architecture
+The static HTML/CSS/vanilla-JavaScript client uses a pure shared rule engine for deterministic text and visual checks. Firebase Authentication identifies users; Cloud Firestore stores the brand pack, versions, comments, and audit data, with Firestore rules restricting role changes and preventing direct client approvals. The Vercel `/api/approve` endpoint verifies Firebase ID tokens with Firebase Admin, rechecks the exact stored version and current brand rules, re-samples attached image colors with `sharp`, and writes the approval plus SHA-256 fingerprints. `/api/gemini` is a separate authenticated serverless proxy; its API key stays in the server environment. The browser-only demo mode uses local storage and is not a substitute for Firebase server-side authorization.
+
+## Post-event roadmap
+1. Add OCR and sampled-region selection so image text/background colors can be detected instead of selected by the creator.
+2. Expand the labelled evaluation set with independently reviewed real brand examples and report confidence intervals by rule category.
+3. Add Firebase Emulator CI coverage for Firestore authorization, plus deployment smoke tests against a staging Firebase/Vercel project.
+4. Evaluate logo/layout checks, reusable approved assets, and multi-workspace administration after the three Round 3 commitments are stable.
 
 ## Folder
 ```
@@ -70,14 +105,15 @@ assets/css/styles.css        design system (light and dark)
 assets/css/3d.css            v5 "Seal Chamber" 3D layer: tokens, hero scene, cube, photo cards, workspace polish
 assets/js/fx.js              tilt, parallax, rotating rule cube, count-up, photo loader (progressive enhancement)
 assets/img/                  optional: drop creator.jpg, reviewer.jpg, admin.jpg, cta.jpg, login.jpg to use your own photos
-assets/js/engine.js          rule engine, brand pack, diff, score (pure functions)
+assets/js/engine.js          shared deterministic rule engine, accuracy benchmark and visual checks
 assets/js/store.js           local + Firebase data store and auth
 assets/js/ai.js              optional Gemini layer
+assets/js/visual.js          image compression and dominant-color sampling
 assets/js/nav-auth.js        landing nav: Login before sign-in, profile photo after, straight to the workspace
 assets/js/shell.js           sidebar, roles, profile photo, toasts, drawer
 assets/js/{review,workflow,rules,insights,about}.js
 assets/js/firebase-config.js paste your Firebase keys here
-firestore.rules firebase.json functions/
+firestore.rules firebase.json api/approve.js functions/
 _previous_version/           earlier single-file build, kept for reference
 ```
 
@@ -94,13 +130,13 @@ Powered by Google Gemini. The optional deep check sends the draft and the rule l
 
 ## v5: "real use" changes
 - **Real roles.** The first account becomes Admin. Roles are changed only by an Admin (Brand rules > Team) and enforced by `firestore.rules`. No self-promotion, no hardcoded admin email.
-- **Separation of duties.** Nobody can approve a document they own (enforced in the database rules). Editing an approved document sends it back to Draft.
+- **Separation of duties.** Nobody can approve a document they own; the server approval endpoint verifies this and Firestore rules deny direct client approval. Editing an approved document sends it back to Draft.
 - **No fake data in a live workspace.** It starts with the generic checks only. "Load sample brand pack" is available to Admins for demos.
 - **AI import of brand guidelines.** Upload a PDF/DOCX/TXT; Gemini drafts guidelines, terms, approved facts and risky-claim types; the Admin reviews before anything is saved.
 - **Gemini key stays on the server** (`/api/gemini`, verified Firebase ID token, per-user rate limit). A personal key can still be pasted for local demos, kept only in that browser.
-- **Tests:** `node tests/engine.test.js` (rule engine) and `node tests/e2e.js` (Playwright; needs `python3 -m http.server 4173` running). The e2e live-mode tests use an in-memory fake of the Firebase SDK.
+- **Tests:** `npm test` covers the engine, AI verifier and approval endpoint; `node tests/e2e.js` runs the browser journeys against an in-memory Firebase mock with `npm start` running.
 
 ## Still honest limits
-- Security rules and the Vercel function were written to the documented APIs but have not been run against your live Firebase project from here. Do the 10-minute checklist in `DEMO.md` before presenting.
-- Rule patterns for facts assume "number + noun". Image/layout analysis is roadmap.
+- Firestore rules and the Vercel endpoint have not been tested against a live Firebase project or emulator here. Follow [DEMO.md](./DEMO.md) and run an emulator/staging approval journey before production.
+- Fact checking is pattern-based and may miss unusual wording or formats. Image review checks sampled palette colors and a creator-selected contrast pair; it does not perform OCR, logo matching, or full layout review.
 - Per-user rate limit is per warm serverless instance.

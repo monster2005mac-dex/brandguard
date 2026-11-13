@@ -40,8 +40,8 @@ service cloud.firestore {
 
     // ---------- Documents ----------
     // A creator reads and writes their own documents. Reviewers and Admins read all.
-    // Only a Reviewer or Admin can set Approved / Changes requested, and nobody can approve
-    // a document they own (separation of duties).
+    // Reviewers/Admins can request changes. Only the server approval endpoint can set Approved,
+    // and nobody can approve a document they own (separation of duties).
     // When an owner edits an Approved or Changes-requested document it must go back to Draft.
     match /docs/{docId} {
       allow read: if signedIn() && (resource.data.owner == request.auth.uid || isReviewer());
@@ -49,21 +49,28 @@ service cloud.firestore {
         && request.resource.data.owner == request.auth.uid
         && request.resource.data.status in ['Draft', 'In review'];
       allow update: if signedIn()
+        && request.resource.data.status != 'Approved'
         && request.resource.data.owner == resource.data.owner
         && (
           // owner saving or submitting
           (resource.data.owner == request.auth.uid
-            && resource.data.status in ['Draft', 'In review', 'Changes requested', 'Approved']
+            && resource.data.status in ['Draft', 'Changes requested', 'Approved']
             && request.resource.data.status in ['Draft', 'In review'])
+          // A submitted version is immutable to its creator while reviewers inspect it.
+          || (resource.data.owner == request.auth.uid
+            && resource.data.status == 'In review'
+            && request.resource.data.status == 'Draft')
+          // Comments and their audit entry are the only same-status creator edits in review.
+          || (resource.data.owner == request.auth.uid
+            && resource.data.status == 'In review'
+            && request.resource.data.status == 'In review'
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['comments', 'audit']))
           // owner re-saving a reviewed document without touching its status is not allowed;
           // the client must reset it to Draft, which the line above permits.
           // reviewer / admin decisions on somebody else's document
           || (isReviewer() && resource.data.owner != request.auth.uid
               && resource.data.status == 'In review'
-              && request.resource.data.status in ['Draft', 'In review', 'Approved', 'Changes requested'])
-          // reviewer / admin may comment on their own document only as Draft / In review
-          || (isReviewer() && resource.data.owner == request.auth.uid
-              && request.resource.data.status in ['Draft', 'In review'])
+              && request.resource.data.status in ['Draft', 'In review', 'Changes requested'])
         );
       allow delete: if isAdmin()
         || (signedIn()

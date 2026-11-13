@@ -3,11 +3,17 @@
 'use strict';
 var BG=window.BG,E=BG.engine,esc=E.esc,S=BG.store,UI=BG.ui,sh=BG.shell;
 var $=function(id){return document.getElementById(id);};
-var sel=null,editMode=false;
+var sel=null,editMode=false,approvalBusy=false,visualConfirmed={};
 var COLS=[['Draft','Not submitted yet'],['In review','Waiting for a reviewer'],['Changes requested','Back with the creator'],['Approved','Locked and ready to publish']];
 
 function addAudit(d,who,what){d.audit.push({at:new Date().toISOString(),who:who,what:what});}
 function latest(d){return d.versions[d.versions.length-1];}
+function verifiedSummary(text,d){
+  var checks=E.checkSnapshot(text,S.rules),visual=E.visualChecks(d.visual||null,S.rules),all=checks.concat(visual);
+  return {high:all.filter(function(f){return f.severity==='high';}).length,disputed:0,resolved:0,
+    openList:all.slice(0,8).map(function(f){return {ruleId:f.ruleId,severity:f.severity,quote:f.quote};}),disputedList:[],
+    rulesFingerprint:E.fingerprint(S.rules),checkSnapshot:checks,visualSnapshot:E.visualSnapshot(d.visual||null)};
+}
 
 function board(){
   var docs=S.visibleDocs().slice().reverse();
@@ -24,6 +30,7 @@ function board(){
 
 function detail(d){
   var c=sh.can(),v=latest(d),blockers=v.summary.high,canDecide=c.approve&&d.owner!==S.user.uid&&d.status==='In review',why='';
+  var confirmKey=d.id+'|'+v.n,needsVisualConfirmation=!!d.image&&!visualConfirmed[confirmKey],visual=E.visualChecks(d.visual||null,S.rules);
   if(!c.approve)why='Creators cannot approve their own work. Switch to Reviewer to decide.';
   else if(d.owner===S.user.uid)why='You cannot approve content that you created. Ask another Reviewer.';
   else if(d.status!=='In review')why='Only content that is In review can be decided.';
@@ -35,6 +42,10 @@ function detail(d){
     '<div class="small muted" style="margin-top:4px">'+esc(d.type)+' · version '+v.n+' of '+d.versions.length+' · saved by '+esc(v.by)+' on '+E.fmt(v.at)+'</div>'+
     (d.intent?' <div class="small muted" style="margin-top:5px"><b>Creator intent:</b> '+esc(d.intent)+'</div>':'')+'</div>'+
     '<div><div class="sec">Latest version</div>'+(    (c.approve&&d.owner!==S.user.uid&&editMode&&d.status==='In review')?'<textarea id="reviewEditText" rows="12" style="width:100%;resize:vertical">'+esc(v.text)+'</textarea><div class="row"><button class="btn primary sm" data-act="commitEdit" data-id="'+esc(d.id)+'">Commit text edit</button><button class="btn sm" data-act="cancelEdit" data-id="'+esc(d.id)+'">Cancel</button></div>':'<div class="marked" style="max-height:220px">'+esc(v.text)+'</div></div>')+
+    (d.image?'<div><div class="sec">Attached image · '+esc(d.image.name||'Image')+'</div><img src="'+esc(d.image.dataUrl)+'" alt="'+esc(d.visual&&d.visual.alt||'')+'" style="max-width:100%;max-height:300px;object-fit:contain;border-radius:12px"><div class="row" style="margin-top:8px">'+((d.visual&&d.visual.colors)||[]).map(function(color){return '<span class="pill neutral"><i style="display:inline-block;width:12px;height:12px;background:'+esc(color)+';border-radius:50%;vertical-align:middle"></i> '+esc(color)+'</span>';}).join('')+'</div>'+
+      '<div class="small muted">Alt text: '+esc(d.visual&&d.visual.alt||'Missing')+(d.visual&&d.visual.hasText?' · contrast pair '+esc(d.visual.foreground)+' on '+esc(d.visual.background):' · no text contrast check selected')+'</div>'+
+      (visual.length?'<ul class="stack" style="list-style:none;padding:0;margin:8px 0">'+visual.map(function(f){return '<li><span class="pill '+f.severity+'">'+esc(f.severity)+'</span> <span class="chip">'+esc(f.ruleId)+'</span> '+esc(f.why)+'</li>';}).join('')+'</ul>':'<div class="note">No visual findings for the submitted image checks.</div>')+
+      (canDecide?'<label class="row small" style="margin-top:8px"><input id="visualConfirm" type="checkbox"'+(visualConfirmed[confirmKey]?' checked':'')+'> I inspected this exact image and its visual findings</label>':'')+'</div>':'')+
     '<div><div class="sec">Review summary</div><div class="row"><span class="pill '+(blockers?'high':'ok')+'">'+blockers+' high open</span><span class="pill neutral">'+v.summary.disputed+' disputed</span><span class="pill ok">'+v.summary.resolved+' resolved by creator</span></div></div>'+
     (open?'<div><div class="sec">Still open at submission</div><ul class="stack" style="list-style:none;margin:0;padding:0;gap:8px">'+open+'</ul></div>':'')+
     (disp?'<div><div class="sec">Needs your decision: disputed by the creator</div><ul class="stack" style="list-style:none;margin:0;padding:0;gap:8px">'+disp+'</ul></div>':'')+
@@ -42,7 +53,7 @@ function detail(d){
       (c.approve&&d.owner!==S.user.uid&&d.status==='In review'?'<button class="btn" data-act="editText" data-id="'+esc(d.id)+'">Edit text and commit</button>':'')+
       '<button class="btn" data-act="exportReview" data-id="'+esc(d.id)+'">Export review report</button>'+
       (d.status==='Approved'?'<button class="btn primary" data-act="copyApproved" data-id="'+esc(d.id)+'">Copy approved text</button>':'')+
-      '<button class="btn primary" data-act="approve" data-id="'+esc(d.id)+'"'+(canDecide&&!blockers?'':' disabled')+'>Approve</button>'+
+      '<button class="btn primary" data-act="approve" data-id="'+esc(d.id)+'"'+(canDecide&&!blockers&&!needsVisualConfirmation&&!approvalBusy?'':' disabled')+'>'+(approvalBusy?'Verifying…':'Approve verified version')+'</button>'+
       '<button class="btn danger" data-act="changes" data-id="'+esc(d.id)+'"'+(canDecide?'':' disabled')+'>Request changes</button></div>'+
     ((c.admin||(c.role==='Creator'&&d.owner===S.user.uid&&(d.status==='Draft'||d.status==='Changes requested')))?'<div><button class="btn danger" data-act="deleteDoc" data-id="'+esc(d.id)+'">Delete document permanently</button></div>':'')+
     (why?'<div class="small muted">'+esc(why)+'</div>':'')+
@@ -84,7 +95,7 @@ document.addEventListener('click',function(ev){
     if(text===old){UI.toast('Change the text before committing.');return;}
     var copy=JSON.parse(JSON.stringify(latest(d)));
     copy.n=d.versions.length+1;copy.text=text;copy.at=new Date().toISOString();copy.by=c.role;
-    copy.summary=copy.summary||{high:0,disputed:0,resolved:0,openList:[],disputedList:[]};
+    copy.summary=verifiedSummary(text,d);
     var edited=JSON.parse(JSON.stringify(d));
     edited.versions.push(copy);addAudit(edited,c.role,'Committed text edit as version '+copy.n);
     S.saveDoc(edited).then(function(){editMode=false;UI.drawer(detail(edited));UI.toast('Text edit committed as version '+copy.n+'.');}).catch(function(e){UI.toast('Commit failed: '+(e&&e.message||'Try again.'));});
@@ -111,6 +122,17 @@ document.addEventListener('click',function(ev){
     var decided=JSON.parse(JSON.stringify(d));
     if(a==='approve'){
       if(latest(d).summary.high>0)return;
+      if(S.mode==='firebase'){
+        var confirmKey=d.id+'|'+latest(d).n;
+        if(d.image&&!visualConfirmed[confirmKey]){UI.toast('Inspect and confirm the attached image before approving.');return;}
+        approvalBusy=true;UI.drawer(detail(d));
+        S.approveDoc(d.id,latest(d).n,!!visualConfirmed[confirmKey]).then(function(result){
+          UI.toast('Server verified and approved version '+result.version+'.');
+        }).catch(function(error){UI.toast('Approval refused: '+(error&&error.message||'Reload and try again.'));}).then(function(){
+          approvalBusy=false;render();
+        });
+        return;
+      }
       decided.status='Approved';addAudit(decided,c.role,'Approved version '+n);
     }else{
       var t2=(($('commentBox')||{}).value||'').trim();
@@ -121,6 +143,14 @@ document.addEventListener('click',function(ev){
     S.saveDoc(decided).then(function(){
       UI.drawer(detail(decided));UI.toast(a==='approve'?'Approved. This version is locked.':'Changes requested.');
     }).catch(function(e){UI.toast('Review decision failed: '+(e&&e.message||'Please try again.'));});return;}
+});
+
+document.addEventListener('change',function(ev){
+  if(ev.target.id==='visualConfirm'&&sel){
+    var d=find(sel);if(!d)return;
+    visualConfirmed[d.id+'|'+latest(d).n]=ev.target.checked;
+    UI.drawer(detail(d));
+  }
 });
 
 sh.start({

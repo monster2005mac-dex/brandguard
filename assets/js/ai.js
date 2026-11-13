@@ -77,6 +77,30 @@ var AI=BG.ai={
   },
   text:function(prompt){return call(prompt,false);},
   json:function(prompt){return call(prompt,true).then(parseLoose);},
+  verifyCandidates:function(candidates,rules){
+    if(!candidates.length)return Promise.resolve([]);
+    var prompt='You are an independent brand-rule verifier. For each proposed finding, decide whether the cited rule actually prohibits or contradicts the exact quoted draft text. A valid rule ID and real quote are not enough: reject weak, unrelated, or unsupported interpretations. Use only the supplied rule and candidate evidence.\n\nRULES:\n'+
+      JSON.stringify(rules)+'\n\nCANDIDATES:\n'+JSON.stringify(candidates.map(function(c,i){return {index:i,ruleId:c.ruleId,quote:c.quote,issue:c.issue,context:c.context};}))+
+      '\n\nReturn only a JSON array with one object per candidate: {"index": number, "supported": boolean, "confidence": number from 0 to 1}. Do not omit candidates.';
+    return AI.json(prompt).then(function(rows){
+      if(!Array.isArray(rows))throw {code:'invalid_json'};
+      var byIndex={};
+      rows.forEach(function(row){
+        if(!row||!Number.isInteger(row.index)||row.index<0||row.index>=candidates.length||typeof row.supported!=='boolean')return;
+        var confidence=Number(row.confidence);
+        byIndex[row.index]={supported:row.supported,confidence:isFinite(confidence)?Math.max(0,Math.min(1,confidence)):0};
+      });
+      return candidates.map(function(candidate,index){
+        var verdict=byIndex[index]||{supported:false,confidence:0};
+        var modelConfidence=Number(candidate.confidence);
+        if(!isFinite(modelConfidence))modelConfidence=0.5;
+        modelConfidence=Math.max(0,Math.min(1,modelConfidence));
+        var agreement=1-Math.abs(modelConfidence-verdict.confidence);
+        return {supported:verdict.supported,confidence:Math.round(((modelConfidence+verdict.confidence)/2)*agreement*100)/100,
+          modelConfidence:modelConfidence,relevanceConfidence:verdict.confidence,agreement:Math.round(agreement*100)/100};
+      });
+    });
+  },
   errorCopy:function(e){
     var c=e&&e.code;
     return c==='not_granted'?'Gemini rejected the request. Sign in again, or check the server API key.':

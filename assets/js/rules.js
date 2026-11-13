@@ -4,9 +4,10 @@
 var BG=window.BG,E=BG.engine,esc=E.esc,S=BG.store,UI=BG.ui,sh=BG.shell;
 var $=function(id){return document.getElementById(id);};
 var tab='guidelines';
+var accuracyAi={signature:'',status:'idle',report:null,error:''};
 var TABS=[['guidelines','Guidelines'],['terms','Terminology'],['facts','Approved facts'],['claims','Claims register']];
 
-function save(){S.saveRules(S.rules);}
+function save(){return S.saveRules(S.rules);}
 function delBtn(id,c){return c.admin?'<button class="btn sm" data-act="edit" data-id="'+id+'">Edit</button> <button class="btn sm danger" data-act="del" data-id="'+id+'" aria-label="Delete '+id+'">Delete</button>':'';}
 
 function table(){
@@ -47,12 +48,92 @@ function teamPanel(){
       return '<tr><td><b>'+esc(u.name||'')+'</b>'+(u.uid===S.user.uid?' <span class="pill">You</span>':'')+'</td><td class="muted">'+esc(u.email||'')+'</td><td><select data-act="setRole" data-uid="'+esc(u.uid)+'" aria-label="Role for '+esc(u.name||u.email||'user')+'">'+['Creator','Reviewer','Admin'].map(function(r){return '<option'+(r===u.role?' selected':'')+'>'+r+'</option>';}).join('')+'</select></td></tr>';
     }).join(''):'<tr><td colspan="3" class="muted">Loading team…</td></tr>')+'</tbody></table></div></section>';
 }
+function accuracyCache(){try{return JSON.parse(localStorage.getItem('bg.accuracy.v1')||'null');}catch(e){return null;}}
+function accuracyStore(value){try{localStorage.setItem('bg.accuracy.v1',JSON.stringify(value));}catch(e){}}
+function startAiAccuracy(signature,force){
+  if(accuracyAi.signature===signature&&(accuracyAi.status==='running'||accuracyAi.status==='done'||(accuracyAi.status==='error'&&!force)))return;
+  var cached=!force&&accuracyCache();
+  if(cached&&cached.signature===signature&&cached.report){
+    accuracyAi={signature:signature,status:'done',report:cached.report,error:''};return;
+  }
+  accuracyAi={signature:signature,status:'running',report:null,error:''};
+  var rules=E.clone(S.rules),cases=E.accuracyDataset(rules),catalog=E.allRules(rules);
+  var prompt='Run a blind accuracy benchmark for BrandGuard. For each numbered DRAFT, report at most one clear issue only when it violates one supplied BRAND RULE. Do not flag acceptable equivalents, supported approximate or qualified facts, or content unrelated to the rules. Do not see or infer expected labels.\n\nBRAND RULES:\n'+
+    JSON.stringify(catalog)+'\n\nDRAFTS:\n'+JSON.stringify(cases.map(function(c,index){return {caseId:index,text:c.text};}))+
+    '\n\nReturn only a JSON array with one object per draft: {"caseId": number, "finding": null OR {"ruleId": an exact supplied rule ID, "quote": exact copied text, "issue": brief reason, "confidence": number from 0 to 1}}.';
+  BG.ai.json(prompt).then(function(rows){
+    if(!Array.isArray(rows))throw {code:'invalid_json'};
+    var candidates=[],seen={},dropped=0;
+    rows.forEach(function(row){
+      var index=row&&Number(row.caseId),test=Number.isInteger(index)?cases[index]:null,f=row&&row.finding;
+      if(!test||!f)return;
+      var rule=catalog.find(function(r){return r.id===String(f.ruleId);});
+      if(!rule||typeof f.quote!=='string'||!f.quote||test.text.indexOf(f.quote)<0||!String(f.issue||'').trim()||seen[index]){
+        dropped++;return;
+      }
+      seen[index]=true;
+      candidates.push({caseId:index,ruleId:rule.id,quote:f.quote,issue:String(f.issue),confidence:f.confidence,
+        context:test.text.slice(0,300)});
+    });
+    return BG.ai.verifyCandidates(candidates,catalog).then(function(verdicts){
+      var accepted={},verified=0;
+      candidates.forEach(function(c,index){
+        var result=verdicts[index];
+        if(result&&result.supported&&result.relevanceConfidence>=0.5){accepted[c.caseId]=c.ruleId;verified++;}
+        else dropped++;
+      });
+      var tp=0,fp=0,fn=0;
+      cases.forEach(function(test,index){
+        var actual=accepted[index],expected=test.expected;
+        if(expected&&actual===expected)tp++;
+        else if(expected)fn++;
+        if(actual&&actual!==expected)fp++;
+      });
+      var report={tests:cases.length,positives:cases.filter(function(x){return !!x.expected;}).length,tp:tp,fp:fp,fn:fn,
+        precision:tp/(tp+fp||1),recall:tp/(tp+fn||1),verified:verified,dropped:dropped,at:new Date().toISOString()};
+      accuracyStore({signature:signature,report:report});
+      if(accuracyAi.signature===signature)accuracyAi={signature:signature,status:'done',report:report,error:''};
+    });
+  }).catch(function(error){
+    if(accuracyAi.signature===signature)accuracyAi={signature:signature,status:'error',report:null,error:BG.ai.errorCopy(error)};
+  }).then(function(){
+    if(accuracyAi.signature===signature)render();
+  });
+}
+function accuracyPanel(){
+  if(!sh.can().admin)return '';
+  var engine=E.accuracyReport(S.rules),pct=function(n){return Math.round(n*100)+'%';};
+  var sig=JSON.stringify(S.rules),ai='';
+  if(BG.ai.available){
+    var state=accuracyAi.signature===sig?accuracyAi:{signature:sig,status:'pending',report:null,error:''};
+    ai='<div class="note" style="margin-top:12px"><b>Gemini + verifier:</b> '+(state.status==='running'?'Running the 60-draft benchmark and independent rule-support checks…':
+      state.status==='done'&&state.report?'Precision '+pct(state.report.precision)+' · Recall '+pct(state.report.recall)+' · '+state.report.tp+' true positives, '+state.report.fp+' false positives, '+state.report.fn+' missed · '+E.plural(state.report.verified,'finding')+' passed the relevance check.':
+      state.status==='error'?esc(state.error):'The 60-draft benchmark is starting.')+
+      '<div class="row" style="margin-top:8px"><button class="btn sm" data-act="aiAccuracyRetry"'+(state.status==='running'?' disabled':'')+'>Rerun AI benchmark</button></div></div>';
+  }else{
+    ai='<div class="note" style="margin-top:12px"><b>Gemini + verifier:</b> Configure Gemini to run the same labelled drafts through the AI and independent rule-support check.</div>';
+  }
+  return '<section class="panel"><div class="row" style="justify-content:space-between"><div><h2>Check accuracy</h2><p class="small muted">60 labelled drafts are tested against this brand pack. Results recalculate when the pack changes.</p></div><span class="pill brand">Admin only</span></div>'+
+    '<div class="kpis" style="margin-top:12px"><div class="kpi"><b>'+pct(engine.precision)+'</b><span>Rule precision</span></div><div class="kpi"><b>'+pct(engine.recall)+'</b><span>Rule recall</span></div>'+
+    '<div class="kpi"><b>'+engine.tp+' / '+engine.positives+'</b><span>Expected findings caught</span></div><div class="kpi"><b>'+engine.fp+'</b><span>False alarms</span></div></div>'+
+    '<p class="small muted" style="margin:10px 0 0">Rule engine: '+engine.tests+' labelled cases, '+engine.positives+' expected findings. Gemini candidates are also checked for exact quotes, valid rule IDs and rule relevance before counting.</p>'+ai+'</section>';
+}
 function setupPanel(){
   var c=sh.can(),R=S.rules;if(!c.admin)return '';
   var empty=!R.terms.length&&!R.facts.length;
   return '<section class="panel"><div class="row" style="justify-content:space-between;align-items:flex-start"><div><h2>'+(empty?'Set up your brand pack':'Brand pack')+'</h2><p class="small muted" style="max-width:62ch">'+(empty?'Your workspace has the generic checks (tone, absolute claims, readability, accessibility) and no company-specific terms or facts yet. Upload your brand guidelines and Gemini will draft the rules for you to review, or add them by hand.':'Upload an updated guidelines document to add more rules, or edit the lists below.')+'</p></div>'+
     '<div class="row"><button class="btn primary" data-act="importDoc"'+(BG.ai.available?'':' title="Needs the AI engine"')+'>Import from guidelines document</button><input type="file" id="guideFile" accept=".pdf,.docx,.txt,.md" hidden></div></div>'+
     '<div class="row" style="margin-top:12px"><label class="small muted" for="companyName">Company name</label><input type="text" id="companyName" value="'+esc(R.company)+'" style="flex:1 1 220px;max-width:340px"><button class="btn sm" data-act="saveCompany">Save</button></div></section>';
+}
+function visualPanel(){
+  if(!sh.can().admin)return '';
+  var v=S.rules.visual||{palette:[],contrast:4.5,paletteTolerance:25};
+  return '<section class="panel"><div class="row" style="justify-content:space-between"><div><h2>Visual standards</h2><p class="small muted">Set approved brand colors and the minimum WCAG AA contrast ratio for text on images.</p></div><span class="pill brand">V-01 · V-02 · V-03</span></div>'+
+    '<div class="field" style="margin-top:12px"><label for="visualPalette">Approved palette (hex colors, comma separated)</label><input id="visualPalette" type="text" value="'+esc((v.palette||[]).join(', '))+'" placeholder="#0D4033, #F5F1E8"></div>'+
+    '<div class="row"><div class="field"><label for="visualContrast">Minimum text contrast</label><select id="visualContrast"><option value="4.5"'+(Number(v.contrast||4.5)===4.5?' selected':'')+'>4.5:1 · normal text (WCAG AA)</option><option value="3"'+(Number(v.contrast)===3?' selected':'')+'>3:1 · large text (WCAG AA)</option></select></div>'+
+    '<button class="btn primary" data-act="saveVisual">Save visual standards</button></div>'+
+    ((v.palette||[]).length?'<div class="row" style="margin-top:10px">'+v.palette.map(function(hex){return '<span class="pill neutral"><i style="display:inline-block;width:14px;height:14px;background:'+esc(hex)+';border-radius:50%;vertical-align:middle;margin-right:5px"></i>'+esc(hex)+'</span>';}).join('')+'</div>':'<div class="empty" style="margin-top:10px">No palette set. Palette checks stay off until you add approved colors.</div>')+
+    '<p class="small muted" style="margin:10px 0 0">Palette comparison uses perceptual color distance on up to five dominant image colors. Contrast checks compare the foreground and background colors selected by the creator.</p></section>';
 }
 function previewImport(p,name){
   var cnt=function(n,w){return '<li><b>'+n+'</b> '+w+'</li>';};
@@ -78,7 +159,8 @@ function mergeImport(p){
 var pendingImport=null;
 function render(){
   var c=sh.can(),y=window.scrollY;
-  $('page').innerHTML=  '<div class="stack">'+setupPanel()+aiPanel()+teamPanel()+
+  if(c.admin&&BG.ai.available)startAiAccuracy(JSON.stringify(S.rules),false);
+  $('page').innerHTML=  '<div class="stack">'+setupPanel()+visualPanel()+aiPanel()+accuracyPanel()+teamPanel()+
     '<div class="note">'+(c.admin?'You are acting as Admin and can edit the brand knowledge.':'Read only. Only an Admin can edit the brand pack.')+' Every finding cites an item below by its ID. Company: <b>'+esc(S.rules.company)+'</b>.</div>'+
     '<div class="row" style="justify-content:space-between"><div class="seg" role="group" aria-label="Rule type">'+TABS.map(function(t){return '<button data-act="tab" data-t="'+t[0]+'" aria-pressed="'+(tab===t[0])+'">'+t[1]+'</button>';}).join('')+'</div>'+
       (c.admin?'<div class="row"><button class="btn primary" data-act="add">Add '+({guidelines:'guideline',terms:'term',facts:'fact',claims:'claim type'})[tab]+'</button>'+
@@ -103,6 +185,12 @@ document.addEventListener('click',function(ev){
   var el=ev.target.closest('[data-act]');if(!el)return;
   var a=el.dataset.act,id=el.dataset.id,R=S.rules,v=function(i){return ($(i).value||'').trim();};
   if(a==='tab'){tab=el.dataset.t;render();return;}
+  if(a==='aiAccuracyRetry'){startAiAccuracy(JSON.stringify(S.rules),true);render();return;}
+  if(a==='saveVisual'){
+    var raw=v('visualPalette'),palette=raw?raw.split(',').map(function(x){return x.trim().toUpperCase();}).filter(Boolean):[];
+    if(palette.length>10||palette.some(function(x){return !/^#[0-9A-F]{6}$/.test(x);})){UI.toast('Use up to 10 valid hex colors, for example #0D4033, #F5F1E8.');return;}
+    R.visual={palette:Array.from(new Set(palette)),contrast:Number($('visualContrast').value),paletteTolerance:25};
+    save().then(function(){render();UI.toast('Visual standards saved.');}).catch(function(e){UI.toast('Could not save visual standards: '+(e&&e.message||'Try again.'));});return;}
   if(a==='add'){form();return;}
   if(a==='aiTest'){
     UI.toast('Testing…');
@@ -119,7 +207,7 @@ document.addEventListener('click',function(ev){
     $('guideFile').click();return;}
   if(a==='confirmImport'){if(pendingImport){mergeImport(pendingImport);pendingImport=null;UI.closeModal();render();UI.toast('Brand pack updated. Review the new rules below.');}return;}
   if(a==='exportPack'){
-    var blob=new Blob([JSON.stringify({company:S.rules.company,guidelines:S.rules.guidelines,terms:S.rules.terms,facts:S.rules.facts,claims:S.rules.claims},null,2)],{type:'application/json'});
+    var blob=new Blob([JSON.stringify({company:S.rules.company,guidelines:S.rules.guidelines,terms:S.rules.terms,facts:S.rules.facts,claims:S.rules.claims,visual:S.rules.visual||{palette:[],contrast:4.5,paletteTolerance:25}},null,2)],{type:'application/json'});
     var url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='brandguard-brand-pack.json';link.click();URL.revokeObjectURL(url);UI.toast('Brand pack exported.');
     return;}
   if(a==='importPack'){ $('brandPackFile').click();return;}
@@ -175,6 +263,11 @@ document.addEventListener('change',function(ev){
       if(!Array.isArray(pack[key]))throw new Error(key+' must be an array');
       if(pack[key].some(function(x){return !x.id;}))throw new Error(key+' contains an item without an ID');
     });
+    if(pack.visual){
+      if(!Array.isArray(pack.visual.palette)||pack.visual.palette.length>10||pack.visual.palette.some(function(x){return typeof x!=='string'||!/^#[0-9a-f]{6}$/i.test(x);}))throw new Error('visual.palette must contain up to 10 hex colors');
+      if([3,4.5].indexOf(Number(pack.visual.contrast))<0)throw new Error('visual.contrast must be 3 or 4.5');
+      R.visual={palette:pack.visual.palette.map(function(x){return x.toUpperCase();}),contrast:Number(pack.visual.contrast),paletteTolerance:25};
+    }
     if(pack.company)R.company=String(pack.company);
     ['guidelines','terms','facts','claims'].forEach(function(key){R[key]=pack[key];});
     save();render();UI.toast('Brand pack imported.');
