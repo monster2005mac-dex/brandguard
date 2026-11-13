@@ -11,7 +11,7 @@
 /* Already signed in? Skip this page. The hop guard stops a loop if the saved hint turns out to be stale. */
 try{
   var h=JSON.parse(localStorage.getItem('bg.hint')||'null'),last=+sessionStorage.getItem('bg.hop')||0;
-  if(h&&/^[a-z]+\.html$/.test(h.home)&&Date.now()-last>8000&&location.search.indexOf('switch')<0){sessionStorage.setItem('bg.hop',String(Date.now()));location.replace(h.home);}
+  if(h&&/^[a-z]+\.html$/.test(h.home)&&Date.now()-last>8000&&location.search.indexOf('switch')<0&&location.search.indexOf('demo=1')<0){sessionStorage.setItem('bg.hop',String(Date.now()));location.replace(h.home);}
 }catch(e){}
 </script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -52,6 +52,13 @@ try{
 <script>
 (function(){
   var S=BG.store,box=document.getElementById('box'),esc=BG.engine.esc;
+  var inviteToken='';
+  try{
+    inviteToken=new URLSearchParams(location.hash.slice(1)).get('invite')||sessionStorage.getItem('bg.inviteToken')||'';
+    if(inviteToken&&/^[A-Za-z0-9_-]{40,50}$/.test(inviteToken))sessionStorage.setItem('bg.inviteToken',inviteToken);
+    else inviteToken='';
+    if(location.hash)history.replaceState(null,'',location.pathname+location.search);
+  }catch(e){inviteToken='';}
   var ROLES=[['Creator','Writes content, resolves findings, submits for approval.'],['Reviewer','Approves or requests changes. Cannot edit drafts.'],['Admin','Edits brand rules and workspace access. Full access.']];
   function go(){
     var tries=0;
@@ -73,13 +80,18 @@ try{
   var BACK='<a class="back-link" href="index.html">&larr; Back to website</a>';
   function demo(){
     box.innerHTML=BACK+'<h1 style="font-size:30px;margin-bottom:6px">Open the demo workspace</h1>'+
-      '<p class="muted" style="margin-bottom:20px">Pick a role to explore. In the live version roles are assigned by the workspace Admin.</p>'+
+      '<p class="muted" style="margin-bottom:14px">No account needed. Choose a role to explore a sample workspace. Demo changes stay in this browser and never touch a live workspace.</p>'+
       (S.note?'<div class="note warn" style="margin-bottom:14px">'+esc(S.note)+'</div>':'')+
       '<div class="role-cards">'+ROLES.map(function(r){
         return '<button class="role-card" data-role="'+r[0]+'"><span class="ico"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-6 8-6s8 2 8 6"/></svg></span><b>'+r[0]+'</b><span>'+r[1]+'</span><span class="go">&rarr;</span></button>';}).join('')+'</div>'+
         '<button class="btn sm ghost" id="resetDemo" type="button" style="margin-top:12px">Reset demo data</button>'+
-        '<p class="small muted" style="margin-top:18px">Local demo mode: data stays in this browser. Add your Firebase keys in <span class="mono">assets/js/firebase-config.js</span> for real accounts and shared data.</p>';
+        '<p class="small muted" style="margin-top:18px">This is a local sandbox. It does not use real accounts, shared data, or server approval.</p>'+
+        '<button class="linkbtn small" id="liveLogin" type="button" style="margin-top:8px">Sign in to a workspace</button>';
     box.querySelectorAll('[data-role]').forEach(function(b){b.addEventListener('click',function(){S.enterLocal('Demo user',b.dataset.role).then(go);});});
+    document.getElementById('liveLogin').addEventListener('click',function(){
+      try{sessionStorage.removeItem('bg.demoMode');}catch(e){}
+      location.replace('login.html');
+    });
     document.getElementById('resetDemo').addEventListener('click',function(){
         S.resetDemo().then(function(){
           try{Object.keys(localStorage).forEach(function(k){if(k.indexOf('bg.session.')===0)localStorage.removeItem(k);});}catch(e){}
@@ -89,21 +101,22 @@ try{
   }
   var mode='in';
   function live(){
-    box.innerHTML=BACK+'<h1 style="font-size:30px;margin-bottom:6px">'+(mode==='in'?'Welcome back':'Create your account')+'</h1>'+
-      '<p class="muted" style="margin-bottom:18px">Sign in to your BrandGuard workspace.</p>'+
-      '<div class="tabs2" role="group"><button data-m="in" aria-pressed="'+(mode==='in')+'">Sign in</button><button data-m="up" aria-pressed="'+(mode==='up')+'">Sign up</button></div>'+
+    box.innerHTML=BACK+'<h1 style="font-size:30px;margin-bottom:6px">'+(mode==='in'?'Welcome back':'Accept your invitation')+'</h1>'+
+      '<p class="muted" style="margin-bottom:18px">'+(mode==='in'?'Sign in to your BrandGuard workspace.':'Create an account using the email address that received this invitation.')+'</p>'+
+      '<div class="tabs2" role="group"><button data-m="in" aria-pressed="'+(mode==='in')+'">Sign in</button>'+(inviteToken?'<button data-m="up" aria-pressed="'+(mode==='up')+'">Accept invitation</button>':'')+'</div>'+
       '<form class="stack" id="f" novalidate>'+
         (mode==='up'?'<div class="field"><label for="nm">Name</label><input type="text" id="nm" autocomplete="name"></div>':'')+
         '<div class="field"><label for="em">Email</label><input type="email" id="em" autocomplete="email" inputmode="email"></div>'+
         '<div class="field"><label for="pw">Password</label><div class="pw-wrap"><input type="password" id="pw" autocomplete="'+(mode==='in'?'current-password':'new-password')+'"><button class="pw-toggle" type="button" id="pwt" aria-label="Show password">Show</button></div>'+(mode==='in'?'<button class="linkbtn small" type="button" id="forgot">Forgot password?</button>':'')+'</div>'+
-        (mode==='up'?'<div class="note" style="margin-top:2px">The first account in a new workspace becomes Admin. Later accounts start as Creators; an Admin assigns Reviewer access.</div>':'')+
+        (mode==='up'?'<div class="note" style="margin-top:2px">This invitation is private and expires after seven days. Verify your email before joining the workspace.</div>':inviteToken?'<div class="note" style="margin-top:2px">Invitation link detected. Sign in with the invited email address to join.</div>':'<div class="note" style="margin-top:2px">Workspace access is invitation-only. Ask a workspace Admin for an invitation link.</div>')+
         '<div id="err" class="note warn" role="alert" hidden></div>'+
         '<button class="btn primary lg" type="submit" id="go">'+(mode==='in'?'Sign in':'Create account')+'</button>'+
         '<button class="btn lg" type="button" id="g">Continue with Google</button>'+
-      '</form>';
+      '</form>'+
+      (!inviteToken?'<a class="btn lg" href="login.html?demo=1" style="margin-top:10px">Explore the demo · no account needed</a>':'');
     box.querySelectorAll('[data-m]').forEach(function(b){b.addEventListener('click',function(){mode=b.dataset.m;live();});});
     var err=document.getElementById('err'),goBtn=document.getElementById('go'),gBtn=document.getElementById('g');
-    function show(msg,ok){err.hidden=false;err.className='note '+(ok?'ok':'warn');err.textContent=msg;}
+    function show(msg,ok){var target=document.getElementById('err');if(!target)return;target.hidden=false;target.className='note '+(ok?'ok':'warn');target.textContent=msg;}
     function fail(e){busy(false);show(friendly(e));}
     function busy(on,label){goBtn.disabled=on;gBtn.disabled=on;if(on)goBtn.textContent=label||'Please wait\u2026';else goBtn.textContent=mode==='in'?'Sign in':'Create account';}
     var pwi=document.getElementById('pw'),pwt=document.getElementById('pwt');
@@ -120,13 +133,24 @@ try{
       var rl='Creator';
       if(!em||!pw){fail({message:'Enter your email and password.'});return;}
       busy(true,mode==='in'?'Signing in\u2026':'Creating account\u2026');
-      if(mode==='up'){var nm=(document.getElementById('nm').value||'').trim()||em.split('@')[0];S.signUp(em,pw,nm,rl).then(go).catch(fail);}
+      if(mode==='up'){
+        if(!inviteToken){fail({code:'invite_required'});return;}
+        var nm=(document.getElementById('nm').value||'').trim()||em.split('@')[0];
+        S.signUp(em,pw,nm,rl,location.origin+location.pathname+location.search+'#invite='+encodeURIComponent(inviteToken)).then(function(){
+          mode='in';live();show('Account created. Check your email and verify the address, then sign in here to accept the workspace invitation.',true);
+        }).catch(fail);
+      }
       else S.signIn(em,pw).then(go).catch(fail);
     });
     gBtn.addEventListener('click',function(){err.hidden=true;busy(true,'Opening Google\u2026');S.google().then(go).catch(fail);});
   }
   function friendly(e){
     var c=e&&e.code||'';
+    if(c==='invite_required')return 'Workspace access is invitation-only. Open a valid invitation link to create an account.';
+    if(c==='verified_email_required')return 'Verify the invited email address using the link we sent, then sign in again.';
+    if(c==='invitation_email_mismatch')return 'Sign in with the email address this invitation was sent to.';
+    if(c==='invitation_expired'||c==='invitation_not_found')return 'This invitation has expired or was already used. Ask an Admin for a new link.';
+    if(c==='already_member')return 'This account already belongs to a workspace.';
     return /wrong-password|invalid-credential|user-not-found/.test(c)?'Email or password is not right.':
       /email-already/.test(c)?'That email already has an account. Use Sign in.':
       /weak-password/.test(c)?'Use a password with at least 6 characters.':
@@ -137,15 +161,30 @@ try{
       /operation-not-allowed/.test(c)?'This sign-in method is not enabled in the Firebase console yet.':
       (e&&e.message)||'Something went wrong. Try again.';
   }
+  if(new URLSearchParams(location.search).get('demo')==='1'){
+    S.startDemo().then(demo).catch(function(error){
+      box.innerHTML=BACK+'<h1 style="font-size:30px;margin-bottom:6px">Demo unavailable</h1>'+
+        '<p class="note warn" role="alert">'+esc(error&&error.message||'The local demo could not start.')+'</p>'+
+        '<a class="btn" href="login.html">Return to sign in</a>';
+    });
+    return;
+  }
   S.init().then(function(user){
     if(user){go();return;}
     try{localStorage.removeItem('bg.hint');}catch(e){}
     if(S.mode==='firebase')live();else demo();
   }).catch(function(error){
+    if(error&&['invite_required','verified_email_required','invitation_email_mismatch','invitation_expired','invitation_not_found','already_member','invalid_invitation'].indexOf(error.code)>=0){
+      live();
+      var notice=document.getElementById('err');
+      if(notice){notice.hidden=false;notice.textContent=friendly(error);}
+      return;
+    }
     box.innerHTML=BACK+'<h1 style="font-size:30px;margin-bottom:6px">Workspace unavailable</h1>'+
       '<p class="note warn" role="alert">'+esc(error&&error.message||'Firebase could not start.')+'</p>'+
       '<p class="muted">BrandGuard will not switch to a local demo while Firebase is configured. Check the Firebase configuration or connection before signing in.</p>'+
-      '<button class="btn primary" type="button" id="retryFirebase">Try again</button>';
+      '<button class="btn primary" type="button" id="retryFirebase">Try again</button>'+
+      '<a class="btn" href="login.html?demo=1" style="margin-top:10px">Explore the local demo instead</a>';
     document.getElementById('retryFirebase').addEventListener('click',function(){location.reload();});
   });
 })();

@@ -1,113 +1,160 @@
-/* Vercel serverless function: server-side Gemini proxy.
-   - The Gemini key lives only in the GEMINI_API_KEY environment variable. It never reaches the browser.
-   - Only signed-in Firebase users can call it. The ID token is verified in one of two ways:
-       a) FIREBASE_SERVICE_ACCOUNT_JSON set  -> firebase-admin verifies it (strongest)
-       b) otherwise FIREBASE_API_KEY (the public web API key) -> Google's accounts:lookup endpoint verifies it
-   - Each user is limited to a handful of calls per minute.
-   GET returns {configured:boolean} so the app can show whether the deep check is available. */
+/* Authenticated Gemini proxy with a Firestore-backed, cross-instance per-user limit. */
+'use strict';
 
 const WINDOW_MS = 60 * 1000;
-const MAX_CALLS = 8;
-const MAX_TRACKED_USERS = 10000;
-const hits = new Map(); // uid -> timestamps (per warm instance; good enough for a hackathon, use Redis for scale)
+const MAX_CALLS = 20;
+const MAX_PROMPT_CHARS = 30000;
+let firebaseApp;
 
-function send(res, status, body) { res.status(status).json(body); }
+function send(res, status, body) { return res.status(status).json(body); }
+
+function serviceApp() {
+  if (firebaseApp) return firebaseApp;
+  const raw = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+  if (!raw) throw serviceError('shared_limit_unavailable', 'Shared AI rate limiting is not configured.');
+  const { getApps, initializeApp, cert } = require('firebase-admin/app');
+  const apps = getApps();
+  if (apps.length) firebaseApp = apps[0];
+  else {
+    const account = JSON.parse(raw);
+    firebaseApp = initializeApp({ credential: cert(account), projectId: account.project_id });
+  }
+  return firebaseApp;
+}
 
 async function verifyToken(token) {
-  const sa = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
-  if (sa) {
-    const { initializeApp, cert, getApps } = require('firebase-admin/app');
-    const { getAuth } = require('firebase-admin/auth');
-    if (!getApps().length) {
-      const parsed = JSON.parse(sa);
-      initializeApp({ credential: cert(parsed), projectId: parsed.project_id });
-    }
-    const decoded = await getAuth().verifyIdToken(token);
-    return decoded.uid;
+  if (process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
+    const app = serviceApp();
+    return require('firebase-admin/auth').getAuth(app).verifyIdToken(token).then((decoded) => decoded.uid);
   }
   const webKey = process.env.FIREBASE_API_KEY;
-  if (!webKey) throw new Error('Set FIREBASE_API_KEY (or FIREBASE_SERVICE_ACCOUNT_JSON) in the Vercel environment');
-  const r = await fetch('https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=' + encodeURIComponent(webKey), {
+  if (!webKey) throw new Error('Firebase token verification is not configured.');
+  const response = await fetch('https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=' + encodeURIComponent(webKey), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ idToken: token })
   });
-  if (!r.ok) throw new Error('Token rejected');
-  const j = await r.json();
-  const user = j.users && j.users[0];
-  if (!user || !user.localId) throw new Error('No user for token');
+  if (!response.ok) throw new Error('Token rejected.');
+  const body = await response.json();
+  const user = body.users && body.users[0];
+  if (!user || typeof user.localId !== 'string') throw new Error('Token has no user.');
   return user.localId;
+}
+
+async function consumeSharedLimit(uid, now) {
+  const app = serviceApp();
+  const db = require('firebase-admin/firestore').getFirestore(app);
+  const ref = db.collection('aiRateLimits').doc(uid);
+  await db.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(ref);
+    const previous = snapshot.exists && snapshot.data().hits;
+    const recent = (Array.isArray(previous) ? previous : []).filter((hit) =>
+      Number.isSafeInteger(hit) && hit <= now && now - hit < WINDOW_MS
+    );
+    if (recent.length >= MAX_CALLS) throw serviceError('rate_limited', 'Too many requests. Wait a minute.');
+    recent.push(now);
+    transaction.set(ref, { hits: recent, expiresAt: new Date(now + WINDOW_MS) });
+  });
+}
+
+async function callGemini(prompt, json, apiKey, model) {
+  const generationConfig = { temperature: 0.1, maxOutputTokens: 8192, thinkingConfig: { thinkingBudget: 0 } };
+  if (json) generationConfig.responseMimeType = 'application/json';
+  const response = await fetch(
+    'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+      body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: prompt }] }], generationConfig })
+    }
+  );
+  if (!response.ok) {
+    console.error('Gemini upstream request failed with status', response.status);
+    throw serviceError(response.status === 429 ? 'upstream_rate_limited' : 'upstream_error',
+      response.status === 429 ? 'Gemini is rate limited. Try again shortly.' : 'Gemini could not complete the request.');
+  }
+  const body = await response.json();
+  const text = ((body.candidates && body.candidates[0] && body.candidates[0].content && body.candidates[0].content.parts) || [])
+    .map((part) => typeof part.text === 'string' ? part.text : '').join('\n');
+  if (!text) throw serviceError('empty_response', 'Gemini returned an empty response.');
+  return text;
 }
 
 module.exports = async function handler(req, res) {
   const origin = process.env.APP_ORIGIN;
-  if (origin) {
+  if (origin && req.headers.origin === origin) {
     res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Vary', 'Origin');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   }
   res.setHeader('Cache-Control', 'no-store');
-
+  res.setHeader('X-Content-Type-Options', 'nosniff');
   if (req.method === 'OPTIONS') return send(res, 204, {});
-  const key = process.env.GEMINI_API_KEY;
-  if (req.method === 'GET') return send(res, 200, { configured: !!key, model: process.env.GEMINI_MODEL || 'gemini-2.5-flash' });
-  if (req.method !== 'POST') return send(res, 405, { error: 'GET or POST only' });
-  if (!key) return send(res, 503, { error: 'GEMINI_API_KEY is not set on the server' });
+
+  const apiKey = process.env.GEMINI_API_KEY;
+  const sharedLimitConfigured = !!process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+  if (req.method === 'GET') {
+    return send(res, 200, {
+      configured: !!apiKey && sharedLimitConfigured,
+      sharedRateLimit: sharedLimitConfigured,
+      model: process.env.GEMINI_MODEL || 'gemini-2.5-flash'
+    });
+  }
+  if (req.method !== 'POST') return send(res, 405, { error: 'POST only', code: 'method_not_allowed' });
+  if (!apiKey) return send(res, 503, { error: 'The server AI key is not configured.', code: 'not_configured' });
+  if (!sharedLimitConfigured) {
+    return send(res, 503, { error: 'Shared AI rate limiting is not configured.', code: 'shared_limit_unavailable' });
+  }
+
+  let body;
+  try {
+    body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+  } catch (error) {
+    return send(res, 400, { error: 'Request body must be valid JSON.', code: 'invalid_json' });
+  }
+  if (!body || typeof body !== 'object' || Array.isArray(body) ||
+      typeof body.prompt !== 'string' || !body.prompt.trim()) {
+    return send(res, 400, { error: 'A non-empty prompt is required.', code: 'invalid_request' });
+  }
+  if (body.prompt.length > MAX_PROMPT_CHARS) {
+    return send(res, 413, { error: 'The prompt is too large. Split it into smaller sections.', code: 'prompt_too_large' });
+  }
 
   let uid;
   try {
     const authorization = req.headers.authorization || '';
     const token = authorization.startsWith('Bearer ') ? authorization.slice(7).trim() : '';
-    if (!token) return send(res, 401, { error: 'Sign in required' });
+    if (!token) return send(res, 401, { error: 'Sign in required.', code: 'unauthorized' });
     uid = await verifyToken(token);
   } catch (error) {
-    console.error('auth failed:', error.message);
-    return send(res, 401, { error: 'Sign in required' });
+    console.error('Gemini authentication failed:', error.message);
+    return send(res, 401, { error: 'Sign in again before using the deep check.', code: 'unauthorized' });
   }
-
-  const now = Date.now();
-  const recent = (hits.get(uid) || []).filter((t) => now - t < WINDOW_MS);
-  if (recent.length >= MAX_CALLS) return send(res, 429, { error: 'Too many requests. Wait a minute.' });
-  if (!hits.has(uid) && hits.size >= MAX_TRACKED_USERS) {
-    for (const [trackedUid, timestamps] of hits) {
-      if (!timestamps.some((timestamp) => now - timestamp < WINDOW_MS)) hits.delete(trackedUid);
-    }
-    if (hits.size >= MAX_TRACKED_USERS) return send(res, 503, { error: 'AI request capacity is temporarily full. Try again shortly.' });
-  }
-  recent.push(now);
-  hits.set(uid, recent);
-
-  const body = typeof req.body === 'string' ? safeJson(req.body) : (req.body || {});
-  const prompt = String(body.prompt || '').slice(0, 30000);
-  if (!prompt) return send(res, 400, { error: 'Prompt is required' });
-
-  const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
-  const generationConfig = { temperature: 0.1, maxOutputTokens: 8192, thinkingConfig: { thinkingBudget: 0 } };
-  if (body.json) generationConfig.responseMimeType = 'application/json';
 
   try {
-    const upstream = await fetch(
-      'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent',
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
-        body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: prompt }] }], generationConfig })
-      }
-    );
-    if (!upstream.ok) {
-      console.error('Gemini upstream', upstream.status, (await upstream.text()).slice(0, 400));
-      return send(res, upstream.status === 429 ? 429 : 502, { error: 'Gemini upstream error', status: upstream.status });
-    }
-    const data = await upstream.json();
-    const text = ((data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts) || [])
-      .map((p) => p.text || '').join('\n');
-    if (!text) return send(res, 502, { error: 'Gemini returned an empty response' });
+    await consumeSharedLimit(uid, Date.now());
+  } catch (error) {
+    if (error.code === 'rate_limited') return send(res, 429, { error: error.message, code: error.code });
+    console.error('Shared AI rate limit failed:', error.message);
+    return send(res, 503, { error: 'Shared AI rate limiting is unavailable. Try again later.', code: 'shared_limit_unavailable' });
+  }
+
+  try {
+    const text = await callGemini(body.prompt, body.json === true, apiKey, process.env.GEMINI_MODEL || 'gemini-2.5-flash');
     return send(res, 200, { text });
   } catch (error) {
-    console.error('Gemini request failed', error.message);
-    return send(res, 502, { error: 'Gemini request failed' });
+    if (error.code === 'upstream_rate_limited') return send(res, 429, { error: error.message, code: error.code });
+    if (error.code === 'empty_response') return send(res, 502, { error: error.message, code: error.code });
+    console.error('Gemini request failed:', error.message);
+    return send(res, 502, { error: 'Gemini request failed. Try again.', code: 'upstream_error' });
   }
 };
 
-function safeJson(s) { try { return JSON.parse(s); } catch (e) { return {}; } }
+function serviceError(code, message) {
+  const error = new Error(message);
+  error.code = code;
+  return error;
+}
+
+module.exports.consumeSharedLimit = consumeSharedLimit;

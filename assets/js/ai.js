@@ -18,11 +18,27 @@ function parseLoose(text){
   if(a>=0&&b>a){try{return JSON.parse(t.slice(a,b+1));}catch(e){}}
   throw {code:'invalid_json',message:'Reply was not JSON'};
 }
+function splitText(text,maxChars){
+  var source=String(text||''),chunks=[],start=0;
+  while(start<source.length){
+    var end=Math.min(start+maxChars,source.length);
+    if(end<source.length){
+      var boundary=source.lastIndexOf('\n\n',end);
+      if(boundary<start+maxChars*0.96)boundary=source.lastIndexOf('\n',end);
+      if(boundary<start+maxChars*0.96)boundary=source.lastIndexOf(' ',end);
+      if(boundary>=start+maxChars*0.96)end=boundary+1;
+    }
+    chunks.push(source.slice(start,end));
+    start=end;
+  }
+  return chunks;
+}
 function localKey(){try{return localStorage.getItem(KEY_LS)||'';}catch(e){return '';}}
 function http(r){
   if(r.status===429)throw {code:'rate_limited'};
   if(r.status===401||r.status===403)throw {code:'not_granted'};
   if(r.status===503)throw {code:'not_configured'};
+  if(r.status===413)throw {code:'prompt_too_large'};
   if(!r.ok)throw {code:'upstream_error'};
   return r.json();
 }
@@ -53,6 +69,10 @@ function call(prompt,wantJson){
   if(localKey())return viaBrowserKey(prompt,wantJson);
   return Promise.reject({code:'capability_disabled'});
 }
+function callMany(prompts,wantJson){
+  if(!Array.isArray(prompts)||!prompts.length||prompts.length>8)return Promise.reject({code:'invalid_request'});
+  return Promise.all(prompts.map(function(prompt){return call(prompt,wantJson);}));
+}
 
 var AI=BG.ai={
   available:false,server:false,
@@ -79,61 +99,98 @@ var AI=BG.ai={
   json:function(prompt){return call(prompt,true).then(parseLoose);},
   verifyCandidates:function(candidates,rules){
     if(!candidates.length)return Promise.resolve([]);
-    var prompt='You are an independent brand-rule verifier. For each proposed finding, decide whether the cited rule actually prohibits or contradicts the exact quoted draft text. A valid rule ID and real quote are not enough: reject weak, unrelated, or unsupported interpretations. Use only the supplied rule and candidate evidence.\n\nRULES:\n'+
-      JSON.stringify(rules)+'\n\nCANDIDATES:\n'+JSON.stringify(candidates.map(function(c,i){return {index:i,ruleId:c.ruleId,quote:c.quote,issue:c.issue,context:c.context};}))+
-      '\n\nReturn only a JSON array with one object per candidate: {"index": number, "supported": boolean, "confidence": number from 0 to 1}. Do not omit candidates.';
-    return AI.json(prompt).then(function(rows){
-      if(!Array.isArray(rows))throw {code:'invalid_json'};
-      var byIndex={};
-      rows.forEach(function(row){
-        if(!row||!Number.isInteger(row.index)||row.index<0||row.index>=candidates.length||typeof row.supported!=='boolean')return;
-        var confidence=Number(row.confidence);
-        byIndex[row.index]={supported:row.supported,confidence:isFinite(confidence)?Math.max(0,Math.min(1,confidence)):0};
+    var groups=[];
+    for(var start=0;start<candidates.length;start+=10)groups.push(candidates.slice(start,start+10));
+    var prompts=groups.map(function(group){
+      return 'You are an independent brand-rule verifier. For each proposed finding, decide whether the cited rule actually prohibits or contradicts the exact quoted draft text. A valid rule ID and real quote are not enough: reject weak, unrelated, or unsupported interpretations. Use only the supplied rule and candidate evidence.\n\nRULES:\n'+
+        JSON.stringify(rules)+'\n\nCANDIDATES:\n'+JSON.stringify(group.map(function(c,i){return {index:i,ruleId:c.ruleId,quote:String(c.quote||'').slice(0,2000),issue:String(c.issue||'').slice(0,500),context:String(c.context||'').slice(0,500)};}))+
+        '\n\nReturn only a JSON array with one object per candidate: {"index": number, "supported": boolean, "confidence": number from 0 to 1}. Do not omit candidates.';
+    });
+    return AI.jsonMany(prompts).then(function(responses){
+      var results=[];
+      responses.forEach(function(rows,groupIndex){
+        if(!Array.isArray(rows))throw {code:'invalid_json'};
+        var group=groups[groupIndex],byIndex={};
+        rows.forEach(function(row){
+          if(!row||!Number.isInteger(row.index)||row.index<0||row.index>=group.length||typeof row.supported!=='boolean')return;
+          var confidence=Number(row.confidence);
+          byIndex[row.index]={supported:row.supported,confidence:isFinite(confidence)?Math.max(0,Math.min(1,confidence)):0};
+        });
+        group.forEach(function(candidate,index){
+          var verdict=byIndex[index]||{supported:false,confidence:0};
+          var modelConfidence=Number(candidate.confidence);
+          if(!isFinite(modelConfidence))modelConfidence=0.5;
+          modelConfidence=Math.max(0,Math.min(1,modelConfidence));
+          var agreement=1-Math.abs(modelConfidence-verdict.confidence);
+          results.push({supported:verdict.supported,confidence:Math.round(((modelConfidence+verdict.confidence)/2)*agreement*100)/100,
+            modelConfidence:modelConfidence,relevanceConfidence:verdict.confidence,agreement:Math.round(agreement*100)/100});
+        });
       });
-      return candidates.map(function(candidate,index){
-        var verdict=byIndex[index]||{supported:false,confidence:0};
-        var modelConfidence=Number(candidate.confidence);
-        if(!isFinite(modelConfidence))modelConfidence=0.5;
-        modelConfidence=Math.max(0,Math.min(1,modelConfidence));
-        var agreement=1-Math.abs(modelConfidence-verdict.confidence);
-        return {supported:verdict.supported,confidence:Math.round(((modelConfidence+verdict.confidence)/2)*agreement*100)/100,
-          modelConfidence:modelConfidence,relevanceConfidence:verdict.confidence,agreement:Math.round(agreement*100)/100};
-      });
+      return results;
     });
   },
   errorCopy:function(e){
     var c=e&&e.code;
     return c==='not_granted'?'Gemini rejected the request. Sign in again, or check the server API key.':
-      c==='rate_limited'?'Gemini is busy or the per-minute limit was reached. Wait a moment and try again.':
+    c==='rate_limited'?'The shared per-user Gemini limit was reached. Wait a minute and try again.':
       c==='invalid_json'?'Gemini replied in an unexpected format. Try again.':
-      c==='not_configured'?'The server has no GEMINI_API_KEY yet. Rule checks still run.':
+    c==='not_configured'?'Gemini or its shared rate-limit service is not configured. Rule checks still run.':
+    c==='prompt_too_large'?'This section is too large for Gemini. Split the input into smaller parts.':
       c==='capability_disabled'?'The deep check is not set up. Rule checks still run.':
       'The deep check could not finish. Rule checks still run.';
   },
+  jsonMany:function(prompts){return callMany(prompts,true).then(function(texts){return texts.map(parseLoose);});},
 
   /* Turn a brand-guidelines document into structured rules. The Admin reviews the result before anything is saved. */
   extractRules:function(docText){
-    var prompt='You convert a company brand-guidelines document into a machine-checkable rule pack. Use ONLY what the document says. Never invent facts, numbers or rules.\n\n'+
-      'DOCUMENT:\n"""\n'+String(docText).slice(0,24000)+'\n"""\n\n'+
+    var source=String(docText||''),maxChars=192000,processed=source.slice(0,maxChars),chunks=splitText(processed,26000);
+    var prompts=chunks.map(function(chunk,index){
+    return 'You convert this section of a company brand-guidelines document into a machine-checkable rule pack. Use ONLY explicit statements in this section. Never invent facts, numbers or rules. Extract standalone rules; do not assume context from another section. This is section '+(index+1)+' of '+chunks.length+'.\n\n'+
+      'DOCUMENT SECTION:\n"""\n'+chunk+'\n"""\n\n'+
       'Reply with ONLY a JSON object with these keys:\n'+
       '{"company": string (the brand name, or ""),\n'+
-      ' "guidelines": [{"title": short title, "text": one clear rule sentence}],  // tone, style, claims policy, accessibility, formatting rules\n'+
+      ' "guidelines": [{"title": short title, "text": one clear rule sentence}],\n'+
       ' "terms": [{"avoid": a word or phrase the brand does NOT use, "good": the approved replacement}],\n'+
-      ' "facts": [{"subject": e.g. "Customer count", "value": digits only e.g. "48000", "noun": the word that follows the number in copy e.g. "customers", "owner": team or role responsible or "Brand team"}],  // only numeric facts explicitly stated\n'+
-      ' "claims": [{"label": e.g. "Award claim", "words": [phrases that make this risky claim]}]  // claims needing evidence or legal sign-off\n}\n'+
-      'Keep each list to at most 15 items. Use empty arrays when the document has none.';
-    return AI.json(prompt).then(function(o){
+      ' "facts": [{"subject": short name, "value": digits only, "noun": the word that follows the number in copy, "owner": responsible team or role or "Brand team"}],\n'+
+      ' "claims": [{"label": claim type, "words": [phrases that make this risky claim]}]}\n'+
+      'Keep each list to at most 15 items. Use empty arrays when this section has none.';
+    });
+    return AI.jsonMany(prompts).then(function(results){
+    var result={company:'',guidelines:[],terms:[],facts:[],claims:[],meta:{totalChars:source.length,processedChars:processed.length,chunks:chunks.length,incomplete:processed.length<source.length,omittedItems:0}};
+    var seen={guidelines:{},terms:{},facts:{},claims:{}},limits={guidelines:50,terms:50,facts:50,claims:30};
+    function arr(value){return Array.isArray(value)?value:[];}
+    function str(value){return typeof value==='string'?value.trim():'';}
+    function add(type,item,key){
+      if(seen[type][key])return;
+      seen[type][key]=true;
+      if(result[type].length>=limits[type]){result.meta.omittedItems++;return;}
+      result[type].push(item);
+    }
+    results.forEach(function(o){
       if(!o||typeof o!=='object'||Array.isArray(o))throw {code:'invalid_json'};
-      function arr(x){return Array.isArray(x)?x:[];}
-      function str(x){return typeof x==='string'?x.trim():'';}
-      return {
-        company:str(o.company),
-        guidelines:arr(o.guidelines).map(function(g){return {title:str(g&&g.title),text:str(g&&g.text)};}).filter(function(g){return g.title&&g.text;}).slice(0,15),
-        terms:arr(o.terms).map(function(t){return {avoid:str(t&&t.avoid),good:str(t&&t.good)};}).filter(function(t){return t.avoid&&t.good&&t.avoid.toLowerCase()!==t.good.toLowerCase();}).slice(0,15),
-        facts:arr(o.facts).map(function(f){return {subject:str(f&&f.subject),value:String(f&&f.value!=null?f.value:'').replace(/[^\d.]/g,''),noun:str(f&&f.noun),owner:str(f&&f.owner)||'Brand team'};}).filter(function(f){return f.subject&&f.value&&f.noun;}).slice(0,15),
-        claims:arr(o.claims).map(function(c){return {label:str(c&&c.label),words:arr(c&&c.words).map(str).filter(Boolean).slice(0,10)};}).filter(function(c){return c.label&&c.words.length;}).slice(0,10)
-      };
+      if(!result.company)result.company=str(o.company).slice(0,120);
+      arr(o.guidelines).forEach(function(g){
+        var item={title:str(g&&g.title).slice(0,120),text:str(g&&g.text).slice(0,1000)};
+        if(item.title&&item.text)add('guidelines',item,(item.title+'|'+item.text).toLowerCase());
+      });
+      arr(o.terms).forEach(function(t){
+        var item={avoid:str(t&&t.avoid).slice(0,120),good:str(t&&t.good).slice(0,120)};
+        if(item.avoid&&item.good&&item.avoid.toLowerCase()!==item.good.toLowerCase())add('terms',item,item.avoid.toLowerCase());
+      });
+      arr(o.facts).forEach(function(f){
+        var value=str(f&&f.value),item={subject:str(f&&f.subject).slice(0,120),value:value,noun:str(f&&f.noun).slice(0,80),owner:str(f&&f.owner).slice(0,120)||'Brand team'};
+        if(item.subject&&/^\d+(?:\.\d+)?$/.test(value)&&item.noun)add('facts',item,item.subject.toLowerCase());
+      });
+      arr(o.claims).forEach(function(c){
+        var words=arr(c&&c.words).map(function(w){return str(w).slice(0,120);}).filter(Boolean).slice(0,10);
+        var item={label:str(c&&c.label).slice(0,120),words:words};
+        if(item.label&&words.length)add('claims',item,item.label.toLowerCase());
+      });
+    });
+    result.meta.incomplete=result.meta.incomplete||result.meta.omittedItems>0;
+    return result;
     });
   }
 };
+AI.chunkText=function(text,maxChars){return splitText(text,maxChars);};
 })();

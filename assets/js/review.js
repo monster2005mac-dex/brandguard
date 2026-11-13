@@ -121,7 +121,7 @@ function cardHtml(f,i){
       h+='<div class="row"><button class="btn primary sm" data-act="accept" data-i="'+i+'"'+(noAccept?' disabled':'')+'>Accept fix</button>'+
         '<button class="btn sm" data-act="edit" data-i="'+i+'"'+(c.edit?'':' disabled')+'>'+(f.needsInput?'Write it':'Edit')+'</button>'+
         '<button class="btn sm danger" data-act="dispute" data-i="'+i+'"'+(c.edit?'':' disabled')+'>Dispute</button>'+
-        (f.needsInput?'<span class="small muted">Needs your words: a tool cannot know what the image shows.</span>':'')+'</div>';
+        (f.needsInput?'<span class="small muted">Needs your words: choose wording that fits the link, image, or sentence context.</span>':'')+'</div>';
     }
   }
   return h+'</div></article>';
@@ -201,27 +201,41 @@ function saveVersion(skipSave){
 function runAI(){
   if(!ss.text.trim()||U.aiBusy)return;
   U.aiBusy=true;ss.ai=[];ss.aiMeta='';recompute();U.aiMsg='Gemini is reading the draft against '+E.allRules(S.rules).length+' brand rules. This can take up to a minute.';render();
+  var draft=ss.text,draftType=ss.type,intent=ss.intent||'',chunks=BG.ai.chunkText(draft,6000),offset=0;
+  var sections=chunks.map(function(text,index){var section={text:text,start:offset,index:index};offset+=text.length;return section;});
   var rules=E.allRules(S.rules).map(function(r){return {id:r.id,type:r.kind,rule:r.text};});
-  var already=ss.findings.filter(function(f){return f.source==='rule';}).map(function(f){return {ruleId:f.ruleId,quote:f.quote};});
-  var prompt='You are a brand-compliance reviewer. Review the DRAFT only against the BRAND RULES below. Do not invent rules.\n\nBRAND RULES (JSON):\n'+JSON.stringify(rules)+
-    '\n\nCONTENT TYPE: '+ss.type+'\nCREATOR INTENT: '+(ss.intent||'Not provided')+
-    '\n\nDRAFT:\n"""\n'+ss.text.slice(0,6000)+'\n"""\n\nALREADY FOUND BY EXACT CHECKS (do not repeat): '+JSON.stringify(already)+
-    '\n\nFind judgement issues the exact checks miss: tone that is too casual or pushy, claims that imply a guarantee or ranking without using the exact words, meaning that contradicts an approved fact or rule.\n'+
-    'Reply with only a JSON array. Each item: {"ruleId": one id from BRAND RULES, "quote": text copied EXACTLY from the DRAFT, "issue": one sentence, "suggestion": replacement for the quote that keeps the writer\'s intent, "severity": "high"|"medium"|"low", "confidence": number from 0 to 1}. If nothing else is wrong reply [].';
-  BG.ai.json(prompt).then(function(data){
-    var list=Array.isArray(data)?data:[],candidates=[],dropped=0,dup=0;
+  var already=ss.findings.filter(function(f){return f.source==='rule';});
+  var prompts=sections.map(function(section){
+    var found=already.filter(function(f){return f.start<section.start+section.text.length&&section.start<f.end;})
+      .map(function(f){return {ruleId:f.ruleId,quote:f.quote};});
+    return 'You are a brand-compliance reviewer. Review this DRAFT SECTION only against the BRAND RULES below. Do not invent rules. The draft is divided into '+sections.length+' sections; examine only this section and do not infer missing context.\n\nBRAND RULES (JSON):\n'+JSON.stringify(rules)+
+      '\n\nCONTENT TYPE: '+draftType+'\nCREATOR INTENT: '+(intent||'Not provided')+
+      '\n\nDRAFT SECTION '+(section.index+1)+' of '+sections.length+':\n"""\n'+section.text+'\n"""\n\nALREADY FOUND BY EXACT CHECKS IN THIS SECTION (do not repeat): '+JSON.stringify(found)+
+      '\n\nFind judgement issues the exact checks miss: tone that is too casual or pushy, claims that imply a guarantee or ranking without using the exact words, meaning that contradicts an approved fact or rule.\n'+
+      'Reply with only a JSON array. Each item: {"ruleId": one id from BRAND RULES, "quote": text copied EXACTLY from this section, "issue": one sentence, "suggestion": replacement for the quote while preserving the writer intent, "severity": "high"|"medium"|"low", "confidence": number from 0 to 1}. If nothing else is wrong reply [].';
+  });
+  BG.ai.jsonMany(prompts).then(function(results){
+    if(ss.text!==draft)throw {code:'draft_changed'};
+    var candidates=[],dropped=0,dup=0,seen={};
     var cat=E.allRules(S.rules);
-    list.forEach(function(it){
-      var rule=it&&cat.find(function(r){return r.id===String(it.ruleId);});
-      var q=it&&typeof it.quote==='string'?it.quote:'',idx=q?ss.text.indexOf(q):-1;
-      if(!rule||idx<0||!String(it.issue||'').trim()){dropped++;return;}
-      if(ss.findings.some(function(f){return f.source==='rule'&&f.start<idx+q.length&&idx<f.end;})){dup++;return;}
-      var conf=Math.max(0,Math.min(1,Number(it.confidence)));if(isNaN(conf))conf=0.5;
-      candidates.push({rule:rule,ruleId:rule.id,category:rule.category,quote:q,issue:String(it.issue),
-        suggestion:typeof it.suggestion==='string'?it.suggestion:'',severity:['high','medium','low'].indexOf(it.severity)>=0?it.severity:'medium',
-        confidence:conf,context:ss.text.slice(Math.max(0,idx-100),Math.min(ss.text.length,idx+q.length+100))});
+    results.forEach(function(data,sectionIndex){
+      var section=sections[sectionIndex],list=Array.isArray(data)?data:[];
+      list.forEach(function(it){
+        var rule=it&&cat.find(function(r){return r.id===String(it.ruleId);});
+        var q=it&&typeof it.quote==='string'?it.quote:'',within=q?section.text.indexOf(q):-1;
+        if(!rule||within<0||q.length>2000||!String(it.issue||'').trim()){dropped++;return;}
+        var idx=section.start+within,key=rule.id+'|'+q.toLowerCase();
+        if(seen[key]){dup++;return;}
+        if(ss.findings.some(function(f){return f.source==='rule'&&f.start<idx+q.length&&idx<f.end;})){dup++;return;}
+        seen[key]=true;
+        var conf=Math.max(0,Math.min(1,Number(it.confidence)));if(isNaN(conf))conf=0.5;
+        candidates.push({rule:rule,ruleId:rule.id,category:rule.category,quote:q,issue:String(it.issue).slice(0,500),
+          suggestion:typeof it.suggestion==='string'?it.suggestion.slice(0,2000):'',severity:['high','medium','low'].indexOf(it.severity)>=0?it.severity:'medium',
+          confidence:conf,context:draft.slice(Math.max(0,idx-200),Math.min(draft.length,idx+q.length+200))});
+      });
     });
     return BG.ai.verifyCandidates(candidates,cat).then(function(verdicts){
+      if(ss.text!==draft)throw {code:'draft_changed'};
       var kept=[],unsupported=0;
       candidates.forEach(function(c,index){
         var verdict=verdicts[index];
@@ -232,7 +246,7 @@ function runAI(){
           reviewerOnly:(c.category==='Claims'||c.category==='Facts')&&c.severity==='high'});
       });
       ss.ai=kept;
-      ss.aiMeta='Gemini suggested '+list.length+' issue'+(list.length===1?'':'s')+'. '+kept.length+' passed quote, rule-source and independent rule-support checks. '+(ss.text.length>6000?'Only the first 6,000 characters were sent to Gemini; exact checks cover the whole draft. ':'')+(dropped+unsupported)+' were dropped by verification'+(dup?', and '+dup+' repeated an exact check':'')+'.';
+      ss.aiMeta='Gemini checked the full '+draft.length+'-character draft in '+sections.length+' sections and suggested '+candidates.length+' issue'+(candidates.length===1?'':'s')+'. '+kept.length+' passed quote, rule-source and independent rule-support checks. '+(dropped+unsupported)+' were dropped by verification'+(dup?', and '+dup+' repeated an exact check':'')+'.';
       U.aiMsg='Deep check finished.';
     });
   }).catch(function(e){

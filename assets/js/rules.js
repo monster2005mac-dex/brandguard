@@ -5,6 +5,7 @@ var BG=window.BG,E=BG.engine,esc=E.esc,S=BG.store,UI=BG.ui,sh=BG.shell;
 var $=function(id){return document.getElementById(id);};
 var tab='guidelines';
 var accuracyAi={signature:'',status:'idle',report:null,error:''};
+var invitationUrl='';
 var TABS=[['guidelines','Guidelines'],['terms','Terminology'],['facts','Approved facts'],['claims','Claims register']];
 
 function save(){return S.saveRules(S.rules);}
@@ -43,7 +44,11 @@ function aiPanel(){
 function teamPanel(){
   var c=sh.can();if(!c.admin||S.mode!=='firebase')return '';
   var users=S.users||[];
-  return '<section class="panel"><h2>Team</h2><p class="small muted" style="margin:4px 0 12px">New people sign up as Creators. Make someone a Reviewer so they can approve content. Roles are enforced by the database rules, not the browser.</p>'+
+  return '<section class="panel"><h2>Team</h2><p class="small muted" style="margin:4px 0 12px">Workspace access is invitation-only. Invite a verified email as a Creator or Reviewer; invitations expire after seven days. Roles are enforced by the database rules, not the browser.</p>'+
+    '<div class="row"><div class="field" style="flex:2 1 220px"><label for="inviteEmail">Invite by email</label><input id="inviteEmail" type="email" autocomplete="email" placeholder="colleague@company.com"></div>'+
+    '<div class="field"><label for="inviteRole">Workspace role</label><select id="inviteRole"><option>Creator</option><option>Reviewer</option></select></div>'+
+    '<button class="btn primary" data-act="sendInvite">Create invite link</button></div>'+
+    (invitationUrl?'<div class="note ok" role="status" style="margin-top:10px">Share this private link with the invited person. It expires in seven days.<div class="row" style="margin-top:8px"><input id="inviteLink" type="text" readonly value="'+esc(invitationUrl)+'" aria-label="Invitation link"><button class="btn sm" data-act="copyInvite">Copy link</button></div></div>':'')+
     '<div class="scroll"><table class="tbl"><thead><tr><th>Name</th><th>Email</th><th>Role</th></tr></thead><tbody>'+(users.length?users.map(function(u){
       return '<tr><td><b>'+esc(u.name||'')+'</b>'+(u.uid===S.user.uid?' <span class="pill">You</span>':'')+'</td><td class="muted">'+esc(u.email||'')+'</td><td><select data-act="setRole" data-uid="'+esc(u.uid)+'" aria-label="Role for '+esc(u.name||u.email||'user')+'">'+['Creator','Reviewer','Admin'].map(function(r){return '<option'+(r===u.role?' selected':'')+'>'+r+'</option>';}).join('')+'</select></td></tr>';
     }).join(''):'<tr><td colspan="3" class="muted">Loading team…</td></tr>')+'</tbody></table></div></section>';
@@ -121,7 +126,8 @@ function accuracyPanel(){
 function setupPanel(){
   var c=sh.can(),R=S.rules;if(!c.admin)return '';
   var empty=!R.terms.length&&!R.facts.length;
-  return '<section class="panel"><div class="row" style="justify-content:space-between;align-items:flex-start"><div><h2>'+(empty?'Set up your brand pack':'Brand pack')+'</h2><p class="small muted" style="max-width:62ch">'+(empty?'Your workspace has the generic checks (tone, absolute claims, readability, accessibility) and no company-specific terms or facts yet. Upload your brand guidelines and Gemini will draft the rules for you to review, or add them by hand.':'Upload an updated guidelines document to add more rules, or edit the lists below.')+'</p></div>'+
+  return '<section class="panel"><div class="row" style="justify-content:space-between;align-items:flex-start"><div><h2>'+(empty?'Set up your brand pack':'Brand pack')+'</h2><p class="small muted" style="max-width:62ch">'+(empty?'Your workspace has the generic checks (tone, absolute claims, readability, accessibility) and no company-specific terms or facts yet. Upload your brand guidelines and Gemini will draft the rules for you to review, or add them by hand.':'Upload an updated guidelines document to add more rules, or edit the lists below.')+'</p>'+
+    (empty?'<ol class="small stack" aria-label="First-run setup steps" style="margin:8px 0 0;padding-left:22px"><li><b>Name the workspace</b> in the field below.</li><li><b>Add company rules</b> by importing a guide or editing the lists.</li><li><b>Set visual standards</b> in the section below.</li></ol>':'')+'</div>'+
     '<div class="row"><button class="btn primary" data-act="importDoc"'+(BG.ai.available?'':' title="Needs the AI engine"')+'>Import from guidelines document</button><input type="file" id="guideFile" accept=".pdf,.docx,.txt,.md" hidden></div></div>'+
     '<div class="row" style="margin-top:12px"><label class="small muted" for="companyName">Company name</label><input type="text" id="companyName" value="'+esc(R.company)+'" style="flex:1 1 220px;max-width:340px"><button class="btn sm" data-act="saveCompany">Save</button></div></section>';
 }
@@ -135,10 +141,11 @@ function visualPanel(){
     ((v.palette||[]).length?'<div class="row" style="margin-top:10px">'+v.palette.map(function(hex){return '<span class="pill neutral"><i style="display:inline-block;width:14px;height:14px;background:'+esc(hex)+';border-radius:50%;vertical-align:middle;margin-right:5px"></i>'+esc(hex)+'</span>';}).join('')+'</div>':'<div class="empty" style="margin-top:10px">No palette set. Palette checks stay off until you add approved colors.</div>')+
     '<p class="small muted" style="margin:10px 0 0">Palette comparison uses perceptual color distance on up to five dominant image colors. Contrast checks compare the foreground and background colors selected by the creator.</p></section>';
 }
-function previewImport(p,name){
+function previewImport(p,name,incomplete){
   var cnt=function(n,w){return '<li><b>'+n+'</b> '+w+'</li>';};
   var list=function(arr,fn){return arr.length?'<ul class="small" style="margin:4px 0 10px 18px">'+arr.map(fn).join('')+'</ul>':'';};
   UI.modal('<h2 style="font-size:20px;margin-bottom:6px">Review what Gemini found in '+esc(name)+'</h2><p class="small muted" style="margin-bottom:10px">Nothing is saved until you confirm. Facts need an expiry date, which you can set afterwards.</p>'+
+    (incomplete?'<div class="note warn" role="status">'+(p.meta&&p.meta.processedChars<p.meta.totalChars?'Gemini checked '+p.meta.processedChars.toLocaleString()+' of '+p.meta.totalChars.toLocaleString()+' characters in '+p.meta.chunks+' sections. The remaining text was not checked; split the guide into smaller parts to review it all.':'The full document text was checked in '+(p.meta&&p.meta.chunks||1)+' sections, but '+(p.meta&&p.meta.omittedItems||0)+' extracted items exceeded the preview limit. Split the guide or add those rules manually.')+'</div>':'')+
     '<div class="stack" style="max-height:52vh;overflow:auto">'+
     '<div><b>'+p.guidelines.length+' guidelines</b>'+list(p.guidelines,function(g){return '<li><b>'+esc(g.title)+'</b>: '+esc(g.text)+'</li>';})+'</div>'+
     '<div><b>'+p.terms.length+' terms</b>'+list(p.terms,function(t){return '<li>'+esc(t.avoid)+' &rarr; <b>'+esc(t.good)+'</b></li>';})+'</div>'+
@@ -202,6 +209,22 @@ document.addEventListener('click',function(ev){
   if(a==='aiKeySave'){var k=v('geminiKey');if(!k){UI.toast('Enter a key.');return;}UI.closeModal();BG.ai.setLocalKey(k).then(function(){render();UI.toast('Key saved on this device.');});return;}
   if(a==='aiKeyClear'){BG.ai.setLocalKey('').then(function(){render();UI.toast('Personal key removed.');});return;}
   if(a==='saveCompany'){var nm=v('companyName');if(!nm){UI.toast('Enter a company name.');return;}R.company=nm;save();UI.toast('Company name saved.');return;}
+  if(a==='sendInvite'){
+    var email=v('inviteEmail'),role=$('inviteRole').value;
+    if(!email){UI.toast('Enter the email address to invite.');return;}
+    el.disabled=true;
+    S.createInvitation(email,role).then(function(url){invitationUrl=url;render();UI.toast('Invitation link created. Share it only with '+email+'.');})
+      .catch(function(error){el.disabled=false;UI.toast('Invitation failed: '+(error&&error.message||'try again'));});
+    return;
+  }
+  if(a==='copyInvite'){
+    var input=$('inviteLink');
+    if(!input)return;
+    input.select();
+    if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(invitationUrl).then(function(){UI.toast('Invitation link copied.');}).catch(function(){UI.toast('Select and copy the invitation link.');});
+    else UI.toast('Select and copy the invitation link.');
+    return;
+  }
   if(a==='importDoc'){
     if(!BG.ai.available){UI.toast('Set up the AI engine first (server key or a personal key).');return;}
     $('guideFile').click();return;}
@@ -244,13 +267,14 @@ document.addEventListener('change',function(ev){
   var t=ev.target;
   if(t.dataset&&t.dataset.act==='setRole'){S.setUserRole(t.dataset.uid,t.value).then(function(){UI.toast('Role updated.');}).catch(function(e){UI.toast('Role change failed: '+(e&&e.message||'try again'));render();});return;}
   if(t.id==='guideFile'&&t.files&&t.files[0]){
-    var gf=t.files[0];UI.toast('Reading '+gf.name+'…');
+    var gf=t.files[0],guideIncomplete=false;UI.toast('Reading '+gf.name+'…');
     window.BGDocumentImport.extract(gf).then(function(text){
       if(text.trim().length<80)throw new Error('The file has almost no text.');
+      guideIncomplete=text.length>192000;
       return BG.ai.extractRules(text);
     }).then(function(p){
       if(!(p.guidelines.length+p.terms.length+p.facts.length+p.claims.length))throw new Error('No rules were found in that document.');
-      previewImport(p,gf.name);
+      previewImport(p,gf.name,guideIncomplete||!!(p.meta&&p.meta.incomplete));
     }).catch(function(e){UI.toast(e&&e.code?BG.ai.errorCopy(e):'Import failed: '+(e&&e.message));}).then(function(){t.value='';});
     return;
   }

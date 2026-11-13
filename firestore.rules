@@ -4,41 +4,57 @@ service cloud.firestore {
 
     function signedIn() { return request.auth != null; }
     function userPath(uid) { return /databases/$(database)/documents/users/$(uid); }
-    function rulesPath() { return /databases/$(database)/documents/brand/rules; }
+    function hasProfile() { return signedIn() && exists(userPath(request.auth.uid)); }
     function me() { return get(userPath(request.auth.uid)).data; }
-    function role() { return me().role; }
-    function isAdmin() { return signedIn() && exists(userPath(request.auth.uid)) && role() == 'Admin'; }
-    function isReviewer() { return signedIn() && exists(userPath(request.auth.uid)) && role() in ['Reviewer', 'Admin']; }
+    function memberOf(workspaceId) {
+      return hasProfile() && me().workspaceId == workspaceId;
+    }
+    function adminOf(workspaceId) {
+      return memberOf(workspaceId) && me().role == 'Admin';
+    }
+    function reviewerOf(workspaceId) {
+      return memberOf(workspaceId) && me().role in ['Reviewer', 'Admin'];
+    }
     function validProfile(data) {
-      return data.keys().hasOnly(['name', 'email', 'role', 'createdAt', 'photo'])
-        && data.keys().hasAll(['name', 'email', 'role', 'createdAt'])
+      return data.keys().hasOnly(['name', 'email', 'role', 'workspaceId', 'createdAt', 'photo'])
+        && data.keys().hasAll(['name', 'email', 'role', 'workspaceId', 'createdAt'])
         && data.name is string && data.name.size() <= 120
         && data.email is string && data.email.size() <= 254
         && data.role in ['Creator', 'Reviewer', 'Admin']
+        && data.workspaceId is string && data.workspaceId.size() <= 131
         && data.createdAt is string && data.createdAt.size() <= 40
         && (!data.keys().hasAny(['photo']) || (data.photo is string && data.photo.size() <= 200000));
     }
-    function listAppended(field) {
-      return request.resource.data[field] is list
-        && resource.data[field] is list
-        && request.resource.data[field].size() == resource.data[field].size() + 1
-        && request.resource.data[field] == resource.data[field].concat([
-          request.resource.data[field][resource.data[field].size()]
-        ]);
-    }
-    function listUnchangedOrAppended(field) {
-      return !request.resource.data.diff(resource.data).affectedKeys().hasAny([field])
-        || listAppended(field);
+    function validBrandPack(data) {
+      return data.keys().hasOnly([
+          'company', 'guidelines', 'terms', 'facts', 'claims', 'visual', 'initialAdmin'
+        ])
+        && data.keys().hasAll(['company', 'guidelines', 'terms', 'facts', 'claims', 'visual'])
+        && data.company is string && data.company.size() > 0 && data.company.size() <= 120
+        && data.guidelines is list && data.guidelines.size() <= 100
+        && data.terms is list && data.terms.size() <= 100
+        && data.facts is list && data.facts.size() <= 100
+        && data.claims is list && data.claims.size() <= 100
+        && data.visual is map
+        && data.visual.keys().hasOnly(['palette', 'contrast', 'paletteTolerance'])
+        && data.visual.keys().hasAll(['palette', 'contrast', 'paletteTolerance'])
+        && data.visual.palette is list && data.visual.palette.size() <= 10
+        && data.visual.contrast in [3, 4.5]
+        && data.visual.paletteTolerance is number
+        && data.visual.paletteTolerance >= 1 && data.visual.paletteTolerance <= 100
+        && (!data.keys().hasAny(['initialAdmin'])
+          || (data.initialAdmin is string && data.initialAdmin.size() <= 128));
     }
     function validDoc(docId) {
       return request.resource.data.keys().hasOnly([
-          'id', 'title', 'type', 'status', 'versions', 'comments', 'audit',
+          'id', 'workspaceId', 'title', 'type', 'status', 'versions', 'comments', 'audit',
           'owner', 'intent', 'image', 'visual', 'approval', 'sample'
         ])
         && request.resource.data.keys().hasAll([
-          'id', 'title', 'type', 'status', 'versions', 'comments', 'audit', 'owner'
+          'id', 'workspaceId', 'title', 'type', 'status', 'versions', 'comments', 'audit', 'owner'
         ])
         && request.resource.data.id == docId
+        && request.resource.data.workspaceId is string
         && request.resource.data.title is string && request.resource.data.title.size() > 0
         && request.resource.data.title.size() <= 200
         && request.resource.data.type is string && request.resource.data.type.size() <= 80
@@ -60,6 +76,18 @@ service cloud.firestore {
             && request.resource.data.image.dataUrl.size() <= 220000
             && request.resource.data.image.dataUrl.matches('data:image/jpeg;base64,[A-Za-z0-9+/=]+')));
     }
+    function listAppended(field) {
+      return request.resource.data[field] is list
+        && resource.data[field] is list
+        && request.resource.data[field].size() == resource.data[field].size() + 1
+        && request.resource.data[field] == resource.data[field].concat([
+          request.resource.data[field][resource.data[field].size()]
+        ]);
+    }
+    function listUnchangedOrAppended(field) {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny([field])
+        || listAppended(field);
+    }
     function appendsVersion() {
       return request.resource.data.versions is list
         && resource.data.versions is list
@@ -75,49 +103,52 @@ service cloud.firestore {
       return appendsVersion() && listAppended('audit');
     }
 
-    // ---------- Users ----------
     match /users/{uid} {
-      allow read: if signedIn() && (request.auth.uid == uid || isAdmin());
-      // Initial Admin creation must atomically create the brand/rules document and this profile.
-      // Firestore transaction retries serialize competing first sign-ups.
-      allow create: if signedIn() && request.auth.uid == uid && validProfile(request.resource.data)
-        && (
-          (request.resource.data.role == 'Creator' && existsAfter(rulesPath()))
-          || (request.resource.data.role == 'Admin'
-            && getAfter(rulesPath()).data.initialAdmin == uid)
-        );
-      allow update: if signedIn() && validProfile(request.resource.data) && (
-        (request.auth.uid == uid
+      allow read: if signedIn() && (
+        request.auth.uid == uid
+        || (resource.data.workspaceId is string && adminOf(resource.data.workspaceId))
+      );
+      allow create, delete: if false;
+      allow update: if validProfile(request.resource.data) && (
+        (signedIn() && request.auth.uid == uid
+          && request.resource.data.workspaceId == resource.data.workspaceId
+          && request.resource.data.role == resource.data.role
+          && request.resource.data.email == resource.data.email
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'photo']))
-        || (isAdmin()
+        || (resource.data.workspaceId is string && adminOf(resource.data.workspaceId)
+          && request.resource.data.workspaceId == resource.data.workspaceId
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['role'])
           && request.resource.data.role in ['Creator', 'Reviewer', 'Admin'])
       );
-      allow delete: if false;
     }
 
-    // ---------- Brand rules ----------
-    match /brand/{id} {
-      allow read: if signedIn();
-      allow create: if isAdmin() || (signedIn() && id == 'rules'
-        && request.resource.data.initialAdmin == request.auth.uid
-        && getAfter(userPath(request.auth.uid)).data.role == 'Admin');
-      allow update: if isAdmin()
+    match /workspaces/{workspaceId} {
+      allow get: if memberOf(workspaceId);
+      allow list, create, update, delete: if false;
+    }
+
+    match /brandRules/{workspaceId} {
+      allow read: if memberOf(workspaceId);
+      allow create: if adminOf(workspaceId) && validBrandPack(request.resource.data);
+      allow update: if adminOf(workspaceId) && validBrandPack(request.resource.data)
         && request.resource.data.get('initialAdmin', '') == resource.data.get('initialAdmin', '');
-      // Deleting this singleton would reopen first-Admin registration.
       allow delete: if false;
     }
 
-    // ---------- Documents ----------
     match /docs/{docId} {
-      allow read: if signedIn() && (resource.data.owner == request.auth.uid || isReviewer());
-      allow create: if signedIn() && request.resource.data.owner == request.auth.uid
+      allow read: if resource.data.workspaceId is string
+        && memberOf(resource.data.workspaceId)
+        && (resource.data.owner == request.auth.uid || reviewerOf(resource.data.workspaceId));
+      allow create: if memberOf(request.resource.data.workspaceId)
+        && request.resource.data.owner == request.auth.uid
         && request.resource.data.status in ['Draft', 'In review']
         && validDoc(docId);
-      allow update: if signedIn() && validDoc(docId)
+      allow update: if resource.data.workspaceId is string
+        && memberOf(resource.data.workspaceId)
+        && request.resource.data.workspaceId == resource.data.workspaceId
+        && validDoc(docId)
         && request.resource.data.owner == resource.data.owner
         && (
-          // Owners can save a new version while their document is not under active review.
           (resource.data.owner == request.auth.uid
             && resource.data.status in ['Draft', 'Changes requested', 'Approved']
             && request.resource.data.status in ['Draft', 'In review']
@@ -128,7 +159,6 @@ service cloud.firestore {
             && appendsVersion()
             && listUnchangedOrAppended('comments')
             && listAppended('audit'))
-          // During review, creators may add a comment, but cannot change submitted content.
           || (resource.data.owner == request.auth.uid
             && resource.data.status == 'In review'
             && request.resource.data.status == 'In review'
@@ -139,34 +169,35 @@ service cloud.firestore {
             && request.resource.data.status == resource.data.status
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['comments', 'audit'])
             && appendsCommentAndAudit())
-          // Reviewers can comment, request changes, or commit a new version; no other fields.
-          || (isReviewer() && resource.data.owner != request.auth.uid
+          || (reviewerOf(resource.data.workspaceId) && resource.data.owner != request.auth.uid
             && resource.data.status == 'In review'
             && request.resource.data.status == 'In review'
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['comments', 'audit'])
             && appendsCommentAndAudit())
-          || (isReviewer() && resource.data.owner != request.auth.uid
+          || (reviewerOf(resource.data.workspaceId) && resource.data.owner != request.auth.uid
             && resource.data.status == 'In review'
             && request.resource.data.status == 'In review'
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['versions', 'audit'])
             && appendsVersionAndAudit())
-          || (isReviewer() && resource.data.owner != request.auth.uid
+          || (reviewerOf(resource.data.workspaceId) && resource.data.owner != request.auth.uid
             && resource.data.status == 'In review'
             && request.resource.data.status == 'Changes requested'
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'comments', 'audit'])
             && appendsCommentAndAudit())
         );
-      allow delete: if isAdmin()
-        || (signedIn() && resource.data.owner == request.auth.uid
-          && resource.data.status in ['Draft', 'Changes requested']);
+      allow delete: if resource.data.workspaceId is string && (
+        adminOf(resource.data.workspaceId)
+        || (memberOf(resource.data.workspaceId) && resource.data.owner == request.auth.uid
+          && resource.data.status in ['Draft', 'Changes requested'])
+      );
     }
 
-    // ---------- Events ----------
     match /events/{eventId} {
-      allow read: if signedIn();
-      allow create: if signedIn()
-        && request.resource.data.keys().hasOnly(['ruleId', 'category', 'outcome', 'at', 'reason', 'by', 'uid'])
-        && request.resource.data.keys().hasAll(['ruleId', 'outcome', 'at', 'uid'])
+      allow read: if resource.data.workspaceId is string && memberOf(resource.data.workspaceId);
+      allow create: if request.resource.data.workspaceId is string
+        && memberOf(request.resource.data.workspaceId)
+        && request.resource.data.keys().hasOnly(['workspaceId', 'ruleId', 'category', 'outcome', 'at', 'reason', 'by', 'uid'])
+        && request.resource.data.keys().hasAll(['workspaceId', 'ruleId', 'outcome', 'at', 'uid'])
         && request.resource.data.uid == request.auth.uid
         && request.resource.data.ruleId is string && request.resource.data.ruleId.size() <= 40
         && request.resource.data.outcome in ['accepted', 'edited', 'disputed']

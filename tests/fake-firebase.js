@@ -22,15 +22,15 @@ function colRef(name,filters){filters=filters||[];
    onSnapshot:function(cb){var f=function(){cb({docs:docs()});};listeners.push(f);setTimeout(f,0);return function(){};}};}
 var authCbs=[];
 function curUser(){try{return JSON.parse(localStorage.getItem(AUTHK));}catch(e){return null;}}
-function mk(u){return u&&Object.assign({},u,{getIdToken:function(){return Promise.resolve('tok-'+u.uid);},updateProfile:function(p){var c=curUser();c.displayName=p.displayName;localStorage.setItem(AUTHK,JSON.stringify(c));var reg=JSON.parse(localStorage.getItem('fake.accts')||'{}');if(reg[c.email])reg[c.email].displayName=p.displayName;localStorage.setItem('fake.accts',JSON.stringify(reg));return Promise.resolve();}});}
+function mk(u){return u&&Object.assign({},u,{getIdToken:function(){return Promise.resolve('tok-'+u.uid);},updateProfile:function(p){var c=curUser();c.displayName=p.displayName;localStorage.setItem(AUTHK,JSON.stringify(c));var reg=JSON.parse(localStorage.getItem('fake.accts')||'{}');if(reg[c.email])reg[c.email].displayName=p.displayName;localStorage.setItem('fake.accts',JSON.stringify(reg));return Promise.resolve();},sendEmailVerification:function(){var c=curUser();c.emailVerified=true;localStorage.setItem(AUTHK,JSON.stringify(c));var reg=JSON.parse(localStorage.getItem('fake.accts')||'{}');if(reg[c.email])reg[c.email].emailVerified=true;localStorage.setItem('fake.accts',JSON.stringify(reg));return Promise.resolve();}});}
 function emitAuth(){var u=mk(curUser());authCbs.forEach(function(f){f(u);});}
 var auth={
   get currentUser(){return mk(curUser());},
   onAuthStateChanged:function(cb){authCbs.push(cb);setTimeout(function(){cb(mk(curUser()));},0);},
   createUserWithEmailAndPassword:function(email,pw){var reg=JSON.parse(localStorage.getItem('fake.accts')||'{}');if(reg[email])return Promise.reject({code:'auth/email-already-in-use'});
-    var u={uid:'u'+(Object.keys(reg).length+1),email:email,displayName:''};reg[email]=Object.assign({pw:pw},u);localStorage.setItem('fake.accts',JSON.stringify(reg));localStorage.setItem(AUTHK,JSON.stringify(u));emitAuth();return Promise.resolve({user:mk(u)});},
+    var u={uid:'u'+(Object.keys(reg).length+1),email:email,displayName:'',emailVerified:false};reg[email]=Object.assign({pw:pw},u);localStorage.setItem('fake.accts',JSON.stringify(reg));localStorage.setItem(AUTHK,JSON.stringify(u));emitAuth();return Promise.resolve({user:mk(u)});},
   signInWithEmailAndPassword:function(email,pw){var reg=JSON.parse(localStorage.getItem('fake.accts')||'{}');var a=reg[email];if(!a||a.pw!==pw)return Promise.reject({code:'auth/invalid-credential'});
-    var u={uid:a.uid,email:a.email,displayName:a.displayName||''};localStorage.setItem(AUTHK,JSON.stringify(u));emitAuth();return Promise.resolve({user:mk(u)});},
+    var u={uid:a.uid,email:a.email,displayName:a.displayName||'',emailVerified:a.emailVerified===true};localStorage.setItem(AUTHK,JSON.stringify(u));emitAuth();return Promise.resolve({user:mk(u)});},
   signOut:function(){localStorage.removeItem(AUTHK);emitAuth();return Promise.resolve();}
 };
 window.firebase={initializeApp:function(){},auth:Object.assign(function(){return auth;},{GoogleAuthProvider:function(){}}),firestore:function(){return {

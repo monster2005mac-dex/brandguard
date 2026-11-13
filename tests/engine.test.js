@@ -11,6 +11,18 @@ t('Super Bowl is not slang, but standalone super is',()=>{assert(!ids('We watche
 t('URLs inside HTML or markdown links are not bare URLs',()=>{assert(!ids('<a href="https://example.com/x">Our pricing page</a>').includes('G-04'));assert(!ids('See [pricing](https://example.com/x) now.').includes('G-04'));assert(ids('Go to https://example.com/x today.').includes('G-04'));});
 t('100% remote is descriptive, 100% results is still flagged',()=>{assert(!ids('We are 100% remote.').includes('G-02'));assert(ids('Get 100% results.').includes('G-02'));});
 t('flags guarantee/100%',()=>assert(ids('We guarantee 100% results.').includes('G-02')));
+t('rewrite suggestions preserve common subject and auxiliary grammar',()=>{
+  const findings=E.runRules('We guarantee results. The platform guarantees success. We will guarantee an outcome.',R);
+  assert.deepStrictEqual(Array.from(findings,f=>f.suggestion),['aim to help deliver ','aims to help deliver ','help deliver ']);
+  const clause=E.runRules('We will guarantee that the team succeeds.',R).find(f=>f.ruleId==='G-02');
+  assert.strictEqual(clause.suggestion,'ensure ');
+  const casual=E.runRules('We gonna help. She wanna learn.',R).filter(f=>f.ruleId==='G-01');
+  assert.deepStrictEqual(Array.from(casual,f=>f.suggestion),['are going to','wants to']);
+  const contractions=E.runRules("I'm gonna help. We're gonna leave.",R).filter(f=>f.ruleId==='G-01');
+  assert.deepStrictEqual(Array.from(contractions,f=>f.suggestion),['going to','going to']);
+  const ambiguous=E.runRules('This sentence says gonna work.',R).find(f=>f.ruleId==='G-01');
+  assert(ambiguous&&ambiguous.needsInput&&ambiguous.adviceOnly);
+});
 t('flags student term',()=>assert(ids('Students love it.').includes('T-01')));
 t('wrong fact flagged, right fact not',()=>{assert(ids('We have 52,000 learners.').includes('F-01'));assert(!ids('We have 48,000 learners.').includes('F-01'));});
 t('ranking claim needs evidence; evidence clears it',()=>{assert(ids("India's #1 platform").includes('C-01'));const r=E.seedRules();r.claims[0].evidence='Survey';assert(!ids("India's #1 platform",r).includes('C-01'));});
@@ -29,6 +41,30 @@ t('visual checks cite palette, contrast, and alt-text rule IDs',()=>{const T=E.t
 t('visual palette and WCAG contrast pass on compliant inputs',()=>{const T=E.templateRules('Acme');T.visual={palette:['#000000'],contrast:4.5,paletteTolerance:25};assert.strictEqual(E.visualChecks({colors:['#000000'],alt:'A black square',hasText:true,foreground:'#FFFFFF',background:'#000000'},T).length,0);});
 t('canonical JSON ignores object key insertion order',()=>assert.strictEqual(E.canonicalJson({b:2,a:1}),E.canonicalJson({a:1,b:2})));
 t('brand-pack fingerprints are stable regardless of key order',()=>assert.strictEqual(E.fingerprint({b:2,a:1}),E.fingerprint({a:1,b:2})));
+t('brand-pack schema rejects unknown fields, duplicate IDs, and unsafe regexes',()=>{
+  assert.deepStrictEqual(Array.from(E.validateRules(E.seedRules())),[]);
+  const bad=E.clone(E.seedRules());
+  bad.terms.push({id:'T-01',avoid:'x',pattern:'(a+)+',good:'y',text:'replace x'});
+  assert(E.validateRules(bad).some(x=>x.includes('unique rule ID')));
+  assert(E.validateRules(bad).some(x=>x.includes('complex to run safely')));
+  const unknown=E.clone(E.seedRules());unknown.guidelines[0].unexpected='<img>';
+  assert(E.validateRules(unknown).some(x=>x.includes('unknown field')));
+});
+t('guideline-gap thresholds count distinct creators, not repeat dispute events',()=>{
+  const events=[
+    {ruleId:'G-01',category:'Tone',outcome:'disputed',uid:'creator-1',reason:'Too strict'},
+    {ruleId:'G-01',category:'Tone',outcome:'disputed',uid:'creator-1',reason:'Too strict'},
+    {ruleId:'G-01',category:'Tone',outcome:'accepted',uid:'creator-2'},
+    {ruleId:'G-01',category:'Tone',outcome:'disputed',uid:'creator-3',reason:'Unclear'}
+  ];
+  const row=E.insightRows(events)[0];
+  assert.strictEqual(row.disputed,3);
+  assert.strictEqual(row.uniquePeople,3);
+  assert.strictEqual(row.uniqueDisputers,2);
+  assert.strictEqual(row.rate,2/3);
+  assert.strictEqual(row.gap,true);
+  assert.deepStrictEqual(Array.from(row.reasons),['Too strict','Unclear']);
+});
 t('reliability harness is 100% on bundled cases',()=>{const r=E.reliability();assert.strictEqual(r.accuracy,1);});
 t('a rule with an invalid pattern is skipped instead of crashing the review',()=>{
   const bad=JSON.parse(JSON.stringify(R));

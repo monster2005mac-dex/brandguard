@@ -65,6 +65,8 @@ async function newCtx(browser, mode) {
     assert.strictEqual(await page.locator('#commentBox').count(), 0); ok('local: comments are closed on an approved version');
     for (const p of ['workflow', 'rules', 'insights', 'about', 'index']) { await page.goto(BASE + p + '.html'); await page.waitForTimeout(300); }
     ok('local: all pages load');
+    assert.strictEqual(await page.locator('a[href="login.html?demo=1"]').count(),1);
+    ok('local: landing page advertises the no-account demo');
     // admin rules page
     await page.goto(BASE + 'login.html'); await page.evaluate(() => { localStorage.removeItem('bg.user.v3'); });
     await page.goto(BASE + 'login.html'); await page.click('[data-role="Admin"]'); await page.waitForURL('**/rules.html');
@@ -80,9 +82,11 @@ async function newCtx(browser, mode) {
   {
     const { ctx, errors } = await newCtx(browser, 'live');
     let geminiPosts = [];
+    let invitation = null;
+    const page = await ctx.newPage();
     await ctx.route('**/api/gemini', async r => {
       const req = r.request();
-      if (req.method() === 'GET') return r.fulfill({ json: { configured: true } });
+      if (req.method() === 'GET') return r.fulfill({ json: { configured: true, sharedRateLimit: true } });
       const body = JSON.parse(req.postData());
       geminiPosts.push({ auth: req.headers()['authorization'], body });
       if (/rule pack/.test(body.prompt)) return r.fulfill({ json: { text: JSON.stringify({ company: 'Acme Bank', guidelines: [{ title: 'No jargon', text: 'Avoid financial jargon in customer copy.' }], terms: [{ avoid: 'client', good: 'customer' }], facts: [{ subject: 'Branches', value: '120', noun: 'branches', owner: 'Ops' }], claims: [{ label: 'Award claim', words: ['award-winning', 'best bank'] }] }) } });
@@ -90,43 +94,102 @@ async function newCtx(browser, mode) {
       if (/independent brand-rule verifier/.test(body.prompt)) return r.fulfill({ json: { text: JSON.stringify([{ index: 0, supported: true, confidence: 0.9 }]) } });
       return r.fulfill({ json: { text: '[]' } });
     });
-    const page = await ctx.newPage();
+    await ctx.route('**/api/invitations', async r => {
+      const body = JSON.parse(r.request().postData());
+      if (body.action === 'create') {
+        invitation = { token: 'A'.repeat(43), email: body.email.toLowerCase(), role: body.role };
+        return r.fulfill({ status: 201, json: { url: '/login.html#invite=' + invitation.token, expiresAt: Date.now() + 7 * 86400000 } });
+      }
+      assert(invitation && body.token === invitation.token, 'acceptance must carry the issued invitation token');
+      const account = await page.evaluate(() => JSON.parse(localStorage.getItem('fake.auth') || 'null'));
+      assert(account && account.email.toLowerCase() === invitation.email, 'invitation must match the signed-in email');
+      const profile = {
+        name: body.name || account.displayName || account.email.split('@')[0],
+        email: account.email,
+        role: invitation.role,
+        workspaceId: 'ws-u1',
+        createdAt: new Date().toISOString(),
+        photo: ''
+      };
+      await page.evaluate(({ uid, profile }) => {
+        const db = JSON.parse(localStorage.getItem('fake.db') || '{}');
+        db['users/' + uid] = profile;
+        localStorage.setItem('fake.db', JSON.stringify(db));
+      }, { uid: account.uid, profile });
+      invitation = null;
+      return r.fulfill({ json: { profile } });
+    });
     await page.goto(BASE + 'login.html');
-    await page.click('[data-m="up"]');
-    await page.fill('#nm', 'Asha Admin'); await page.fill('#em', 'asha@acme.test'); await page.fill('#pw', 'secret12');
-    assert.strictEqual(await page.locator('#rl').count(), 0); ok('live: sign-up has no role picker');
+    await page.waitForSelector('[data-m="in"]');
+    await page.evaluate(() => {
+      const workspaceId = 'ws-u1';
+      const rules = {
+        company: 'Acme Bank', initialAdmin: 'u1',
+        guidelines: [{ id: 'G-01', title: 'Professional tone', check: 'tone', text: 'Use a warm, professional voice without slang.' }],
+        terms: [], facts: [], claims: [],
+        visual: { palette: [], contrast: 4.5, paletteTolerance: 25 }
+      };
+      localStorage.setItem('fake.db', JSON.stringify({
+        'workspaces/ws-u1': { name: 'Acme Bank', initialAdmin: 'u1', schemaVersion: 1 },
+        'brandRules/ws-u1': rules,
+        'users/u1': { name: 'Asha Admin', email: 'asha@acme.test', role: 'Admin', workspaceId, createdAt: new Date().toISOString() }
+      }));
+      localStorage.setItem('fake.accts', JSON.stringify({
+        'asha@acme.test': { uid: 'u1', email: 'asha@acme.test', displayName: 'Asha Admin', emailVerified: true, pw: 'secret12' }
+      }));
+    });
+    assert.strictEqual(await page.locator('[data-m="up"]').count(), 0); ok('live: open self-registration is hidden');
+    await page.fill('#em', 'asha@acme.test'); await page.fill('#pw', 'secret12');
     await page.click('#go');
-    await page.waitForURL('**/rules.html', { timeout: 8000 }); ok('live: first account lands on Rules as Admin');
+    await page.waitForURL('**/rules.html', { timeout: 8000 }); ok('live: provisioned workspace Admin lands on Rules');
     const bootstrap=await page.evaluate(()=>{
-      const accounts=JSON.parse(localStorage.getItem('fake.accts')||'{}');
-      const account=accounts['asha@acme.test'];
       const db=JSON.parse(localStorage.getItem('fake.db')||'{}');
-      return {role:db['users/'+account.uid].role,initialAdmin:db['brand/rules'].initialAdmin,uid:account.uid};
+      return {role:db['users/u1'].role,initialAdmin:db['brandRules/ws-u1'].initialAdmin,workspaceId:db['users/u1'].workspaceId};
     });
     assert.strictEqual(bootstrap.role,'Admin');
-    assert.strictEqual(bootstrap.initialAdmin,bootstrap.uid);
-    ok('live: first account and brand workspace are created together with a single initial admin');
+    assert.strictEqual(bootstrap.initialAdmin,'u1');
+    assert.strictEqual(bootstrap.workspaceId,'ws-u1');
+    ok('live: initial Admin is explicitly provisioned into a workspace');
     await page.waitForSelector('text=1 finding passed the relevance check'); ok('live: Admin sees Gemini benchmark metrics after its rule-support verification');
     await page.waitForSelector('text=Set up your brand pack');
+    assert.strictEqual(await page.locator('[aria-label="First-run setup steps"]').count(), 1);
+    ok('live: first Admin receives a three-step setup guide');
     assert((await page.textContent('body')).includes('Northwind') === false); ok('live: no fictional Northwind data in a real workspace');
     assert.strictEqual(await page.locator('text=Server AI connected').count(), 1); ok('live: server AI detected');
     // import guidelines via mocked AI
-    fs.writeFileSync('/tmp/guide.txt', 'Acme Bank brand guide. '.repeat(20));
-    await page.setInputFiles('#guideFile', '/tmp/guide.txt');
+    fs.writeFileSync('/tmp/guide.txt', 'Acme Bank brand guide. '.repeat(10000));
+    const [guideChooser] = await Promise.all([
+      page.waitForEvent('filechooser'),
+      page.click('[data-act="importDoc"]')
+    ]);
+    await guideChooser.setFiles('/tmp/guide.txt');
     await page.waitForSelector('text=Review what Gemini found');
+    const importModal=await page.textContent('#modal');
+    assert(importModal.includes('characters in 8 sections'));
+    assert(importModal.includes('remaining text was not checked'));
+    ok('live: long guideline import analyzes multiple sections and discloses its upper bound');
     assert(geminiPosts[0].auth === 'Bearer tok-u1'); ok('live: AI call carries the signed-in ID token');
     await page.click('[data-act="confirmImport"]');
     await page.waitForTimeout(300);
     await page.click('[data-t="terms"]'); assert((await page.textContent('#page')).includes('customer'));
     await page.click('[data-t="facts"]'); assert((await page.textContent('#page')).includes('120 branches')); ok('live: imported rules appear in the brand pack');
     await page.fill('#companyName', 'Acme Bank'); await page.click('[data-act="saveCompany"]');
-    // sign out, second user becomes Creator
+    // Admin issues a scoped invitation; an uninvited account cannot join.
+    await page.goto(BASE + 'rules.html');
+    await page.waitForSelector('#inviteEmail');
+    await page.fill('#inviteEmail','ben@acme.test'); await page.selectOption('#inviteRole','Creator');
+    await page.click('[data-act="sendInvite"]'); await page.waitForSelector('#inviteLink');
+    const inviteUrl=await page.inputValue('#inviteLink');
+    ok('live: Admin creates an expiring workspace invitation link');
     await page.evaluate(() => { localStorage.removeItem('fake.auth'); localStorage.removeItem('bg.hint'); });
-    await page.goto(BASE + 'login.html'); await page.waitForSelector('[data-m="up"]');
+    await page.goto(new URL(inviteUrl, BASE).toString()); await page.waitForSelector('[data-m="up"]');
     await page.click('[data-m="up"]'); await page.fill('#nm', 'Ben Creator'); await page.fill('#em', 'ben@acme.test'); await page.fill('#pw', 'secret12'); await page.click('#go');
-    await page.waitForURL('**/workflow.html', { timeout: 8000 }); ok('live: second account is a Creator');
+    await page.waitForSelector('text=Check your email and verify the address');
+    await page.fill('#em', 'ben@acme.test'); await page.fill('#pw', 'secret12'); await page.click('#go');
+    await page.waitForURL('**/workflow.html', { timeout: 8000 }); ok('live: verified invitee joins only the invited workspace as a Creator');
     const db = await page.evaluate(() => JSON.parse(localStorage.getItem('fake.db')));
-    assert.strictEqual(db['users/u1'].role, 'Admin'); assert.strictEqual(db['users/u2'].role, 'Creator'); ok('live: roles stored correctly (Admin, Creator)');
+    assert.strictEqual(db['users/u1'].role, 'Admin'); assert.strictEqual(db['users/u2'].role, 'Creator');
+    assert.strictEqual(db['users/u2'].workspaceId, 'ws-u1'); ok('live: roles and tenant IDs stored correctly');
     // creator: review catches a wrong fact from the imported pack
     await page.goto(BASE + 'review.html'); await page.waitForSelector('#draft');
     await page.fill('#draft', 'Our client base spans 300 branches nationwide.');
@@ -144,9 +207,15 @@ async function newCtx(browser, mode) {
     await page.selectOption('select[data-uid="u2"]', 'Reviewer'); await page.waitForTimeout(400);
     const db2 = await page.evaluate(() => JSON.parse(localStorage.getItem('fake.db')));
     assert.strictEqual(db2['users/u2'].role, 'Reviewer'); ok('live: Admin promotes a user to Reviewer');
+    await page.waitForSelector('#inviteEmail');
+    await page.fill('#inviteEmail','cara@acme.test'); await page.selectOption('#inviteRole','Creator');
+    await page.click('[data-act="sendInvite"]'); await page.waitForSelector('#inviteLink');
+    const caraInvite=await page.inputValue('#inviteLink');
     await page.evaluate(() => { localStorage.removeItem('fake.auth'); localStorage.removeItem('bg.hint'); });
-    await page.goto(BASE + 'login.html'); await page.click('[data-m="up"]');
+    await page.goto(new URL(caraInvite, BASE).toString()); await page.click('[data-m="up"]');
     await page.fill('#nm','Cara Creator'); await page.fill('#em','cara@acme.test'); await page.fill('#pw','secret12'); await page.click('#go');
+    await page.waitForSelector('text=Check your email and verify the address');
+    await page.fill('#em','cara@acme.test'); await page.fill('#pw','secret12'); await page.click('#go');
     await page.waitForURL('**/workflow.html');
     await page.goto(BASE + 'review.html'); await page.waitForSelector('#draft');
     await page.fill('#title','Round 3 approval fixture');
@@ -182,7 +251,17 @@ async function newCtx(browser, mode) {
     await page.goto(BASE+'login.html');
     await page.waitForSelector('text=Workspace unavailable');
     assert.strictEqual(await page.locator('[data-role]').count(),0);
-    ok('configured Firebase startup failures never fall back to a misleading local demo');
+    assert.strictEqual(await page.locator('a[href="login.html?demo=1"]').count(),1);
+    ok('configured Firebase failures do not auto-switch, but offer an explicit local demo');
+    await page.goto(BASE+'login.html?demo=1');
+    await page.waitForSelector('[data-role="Creator"]');
+    await page.click('[data-role="Creator"]');
+    await page.waitForURL('**/workflow.html');
+    await page.waitForSelector('#page');
+    const demoState=await page.evaluate(() => ({mode:BG.store.mode,fakeAuth:localStorage.getItem('fake.auth')}));
+    assert.strictEqual(demoState.mode, 'local');
+    assert.strictEqual(demoState.fakeAuth, null);
+    ok('public demo entry works without Firebase credentials and stays isolated in local storage');
     await ctx.close();
   }
 

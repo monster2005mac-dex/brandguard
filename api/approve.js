@@ -73,7 +73,7 @@ async function dominantColors(dataUrl) {
 
 module.exports = async function handler(req, res) {
   const origin = process.env.APP_ORIGIN;
-  if (origin) {
+  if (origin && req.headers.origin === origin) {
     res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Vary', 'Origin');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
@@ -94,12 +94,17 @@ module.exports = async function handler(req, res) {
     const authorization = req.headers.authorization || '';
     const token = authorization.startsWith('Bearer ') ? authorization.slice(7).trim() : '';
     if (!token) return respond(res, 401, { error: 'Sign in required.', code: 'unauthorized' });
-    uid = (await require('firebase-admin/auth').getAuth(app).verifyIdToken(token)).uid;
+    uid = (await require('firebase-admin/auth').getAuth(app).verifyIdToken(token, true)).uid;
   } catch (error) {
     return respond(res, 401, { error: 'Sign in again before approving.', code: 'unauthorized' });
   }
 
-  const body = typeof req.body === 'string' ? safeJson(req.body) : (req.body || {});
+  let body;
+  try { body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body; }
+  catch (error) { return respond(res, 400, { error: 'Request body must be valid JSON.', code: 'invalid_json' }); }
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return respond(res, 400, { error: 'A valid document and version are required.', code: 'invalid_request' });
+  }
   const id = typeof body.docId === 'string' ? body.docId : '';
   const versionNumber = Number(body.version);
   if (!/^[A-Za-z0-9_-]{1,120}$/.test(id) || !Number.isInteger(versionNumber) || versionNumber < 1) {
@@ -115,13 +120,20 @@ module.exports = async function handler(req, res) {
   try {
     const result = await db.runTransaction(async (transaction) => {
       const docRef = db.collection('docs').doc(id);
-      const rulesRef = db.collection('brand').doc('rules');
       const userRef = db.collection('users').doc(uid);
-      const [docSnap, rulesSnap, userSnap] = await Promise.all([
-        transaction.get(docRef), transaction.get(rulesRef), transaction.get(userRef)
-      ]);
-      if (!docSnap.exists || !rulesSnap.exists || !userSnap.exists) throw approvalError(404, 'Document or workspace was not found.', 'not_found');
-      const doc = docSnap.data(), rules = rulesSnap.data(), user = userSnap.data();
+      const userSnap = await transaction.get(userRef);
+      if (!userSnap.exists) throw approvalError(404, 'Document or workspace was not found.', 'not_found');
+      const user = userSnap.data(), workspaceId = user.workspaceId;
+      if (typeof workspaceId !== 'string' || !/^ws-[A-Za-z0-9_-]{1,128}$/.test(workspaceId)) {
+        throw approvalError(403, 'Your account is not assigned to a valid workspace.', 'invalid_membership');
+      }
+      const rulesRef = db.collection('brandRules').doc(workspaceId);
+      const [docSnap, rulesSnap] = await Promise.all([transaction.get(docRef), transaction.get(rulesRef)]);
+      if (!docSnap.exists || !rulesSnap.exists) throw approvalError(404, 'Document or workspace was not found.', 'not_found');
+      const doc = docSnap.data(), rules = rulesSnap.data();
+      if (doc.workspaceId !== workspaceId) throw approvalError(404, 'Document or workspace was not found.', 'not_found');
+      const ruleErrors = engine.validateRules(rules);
+      if (ruleErrors.length) throw approvalError(409, 'The saved brand pack is invalid: '+ruleErrors[0], 'invalid_brand_pack');
       if (!['Reviewer', 'Admin'].includes(user.role)) throw approvalError(403, 'Only a Reviewer or Admin can approve.', 'forbidden');
       if (doc.owner === uid) throw approvalError(403, 'You cannot approve your own document.', 'self_approval');
       if (doc.status !== 'In review') throw approvalError(409, 'This document is no longer waiting for review.', 'stale_status');
@@ -184,9 +196,6 @@ function approvalError(status, message, code) {
   error.status = status;
   error.code = code;
   return error;
-}
-function safeJson(text) {
-  try { return JSON.parse(text); } catch (error) { return {}; }
 }
 module.exports.dominantColors = dominantColors;
 module.exports.openHigh = openHigh;

@@ -3,9 +3,10 @@ const assert=require('assert'),crypto=require('crypto'),Module=require('module')
 const E=require('../assets/js/engine.js');
 let fixture={};
 const app={};
+const workspaceId='ws-acme';
 const refs={
   'docs/test-doc':{collection:'docs',id:'test-doc'},
-  'brand/rules':{collection:'brand',id:'rules'},
+  ['brandRules/'+workspaceId]:{collection:'brandRules',id:workspaceId},
   'users/reviewer':{collection:'users',id:'reviewer'}
 };
 const fakeDb={
@@ -32,9 +33,9 @@ function makeFixture(text,visual){
   const rules=E.templateRules('Acme');
   const summary={rulesFingerprint:E.fingerprint(rules),checkSnapshot:E.checkSnapshot(text,rules),visualSnapshot:E.visualSnapshot(visual),disputedList:[]};
   fixture={
-    'docs/test-doc':{owner:'creator',status:'In review',versions:[{n:1,text,summary}],audit:[],image:visual?{dataUrl:visual.dataUrl,name:'creative.jpg'}:null,visual:visual?E.visualSnapshot(visual):null},
-    'brand/rules':rules,
-    'users/reviewer':{role:'Reviewer',name:'Reviewer'}
+    'docs/test-doc':{owner:'creator',workspaceId,status:'In review',versions:[{n:1,text,summary}],audit:[],image:visual?{dataUrl:visual.dataUrl,name:'creative.jpg'}:null,visual:visual?E.visualSnapshot(visual):null},
+    ['brandRules/'+workspaceId]:rules,
+    'users/reviewer':{role:'Reviewer',workspaceId,name:'Reviewer'}
   };
 }
 async function request(body){
@@ -64,23 +65,29 @@ async function request(body){
   assert.strictEqual(blocked.body.code,'blocking_findings');
 
   makeFixture('We guarantee results.');
-  const blocker=E.runRules('We guarantee results.',fixture['brand/rules']).find((finding)=>finding.severity==='high');
+  const blocker=E.runRules('We guarantee results.',fixture['brandRules/'+workspaceId]).find((finding)=>finding.severity==='high');
   fixture['docs/test-doc'].versions[0].summary.disputedList=[{ruleId:blocker.ruleId,quote:blocker.quote,reason:' '}];
   const reasonRequired=await request({});
   assert.strictEqual(reasonRequired.statusCode,409);
   assert.strictEqual(reasonRequired.body.code,'blocking_findings');
 
   makeFixture('We guarantee results.');
-  const validBlocker=E.runRules('We guarantee results.',fixture['brand/rules']).find((finding)=>finding.severity==='high');
+  const validBlocker=E.runRules('We guarantee results.',fixture['brandRules/'+workspaceId]).find((finding)=>finding.severity==='high');
   fixture['docs/test-doc'].versions[0].summary.disputedList=[{ruleId:validBlocker.ruleId,quote:validBlocker.quote,reason:'This claim is backed by the signed service terms.'}];
   const disputed=await request({});
   assert.strictEqual(disputed.statusCode,200);
 
   makeFixture('Our learners have flexible access.');
-  fixture['brand/rules'].company='Changed brand';
+  fixture['brandRules/'+workspaceId].company='Changed brand';
   const staleRules=await request({});
   assert.strictEqual(staleRules.statusCode,409);
   assert.strictEqual(staleRules.body.code,'stale_rules');
+
+  makeFixture('Our learners have flexible access.');
+  fixture['brandRules/'+workspaceId].unexpected='<script>';
+  const invalidPack=await request({});
+  assert.strictEqual(invalidPack.statusCode,409);
+  assert.strictEqual(invalidPack.body.code,'invalid_brand_pack');
 
   makeFixture('Our learners have flexible access.');
   fixture['docs/test-doc'].owner='reviewer';

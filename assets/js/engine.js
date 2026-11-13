@@ -14,6 +14,29 @@ function cap(orig,repl,text,idx){
   var start=idx===0||/(^|[.!?\n])\s*$/.test(text.slice(0,idx));
   return start&&/^[a-z]/.test(repl)?repl[0].toUpperCase()+repl.slice(1):repl;
 }
+function slangFix(word,text,index){
+  var key=word.toLowerCase(),before=text.slice(0,index);
+  if(key!=='gonna'&&key!=='wanna')return null;
+  if(key==='gonna'&&(/\b(?:am|is|are)\s+$/i.test(before)||/\b(?:i'm|we're|you're|they're|he's|she's|it's)\s+$/i.test(before)))return 'going to';
+  if(key==='wanna'&&/\b(?:am|is|are|i'm|we're|you're|they're|he's|she's|it's)\s+$/i.test(before))return null;
+  var subject=before.match(/\b(I(?:'m)?|we|you|they|he|she|it)\s*$/i);
+  if(!subject)return null;
+  var person=subject[1].toLowerCase();
+  if(key==='gonna'){
+    var auxiliary=/^i/.test(person)?'am':/^(?:we|you|they)$/.test(person)?'are':'is';
+    return auxiliary+' going to';
+  }
+  return /^(?:i|we|you|they)$/.test(person)?'want to':'wants to';
+}
+function guaranteeFix(match,text){
+  var before=text.slice(0,match.index),after=text.slice(match.index+match[0].length);
+  var modal=/\b(?:will|can|could|may|might|should|must|do|does|did)\s+$/i.test(before);
+  var thirdPerson=/guarantees/i.test(match[0]);
+  if(/^\s*to\b/i.test(after))return 'aim ';
+  if(/^\s*that\b/i.test(after))return modal?'ensure ':thirdPerson?'aims to ensure ':'aim to ensure ';
+  if(modal)return 'help deliver ';
+  return thirdPerson?'aims to help deliver ':'aim to help deliver ';
+}
 function fmt(iso){try{return new Date(iso).toLocaleString('en-IN',{dateStyle:'medium',timeStyle:'short'});}catch(e){return iso;}}
 function plural(n,w){return n+' '+w+(n===1?'':'s');}
 function clone(x){return JSON.parse(JSON.stringify(x));}
@@ -25,13 +48,13 @@ function seedRules(){
   return {
     company:'Your company',
     guidelines:[
-      {id:'G-01',check:'tone',text:'Use a warm, professional voice without slang.'},
-      {id:'G-02',check:'absolutes',text:'Do not promise guaranteed outcomes or absolute results.'},
-      {id:'G-03',check:'readability',text:'Keep sentences clear and under 25 words.'},
-      {id:'G-04',check:'a11y',text:'Use meaningful link text and describe images with alt text.'}
+      {id:'G-01',title:'Professional tone',check:'tone',text:'Use a warm, professional voice without slang.'},
+      {id:'G-02',title:'No guaranteed outcomes',check:'absolutes',text:'Do not promise guaranteed outcomes or absolute results.'},
+      {id:'G-03',title:'Clear sentences',check:'readability',text:'Keep sentences clear and under 25 words.'},
+      {id:'G-04',title:'Accessible content',check:'a11y',text:'Use meaningful link text and describe images with alt text.'}
     ],
     terms:[
-      {id:'T-01',pattern:'students',good:'learners',text:'Use learner-focused terminology.'}
+      {id:'T-01',avoid:'students',pattern:'students',good:'learners',text:'Use learner-focused terminology.'}
     ],
     facts:[
       {id:'F-01',subject:'Learners',value:'48000',display:'48,000 learners',pattern:'(\\d[\\d,]*)\\+?\\s+learners',owner:'Content operations',expires:isoPlus(365)},
@@ -39,7 +62,7 @@ function seedRules(){
     ],
     visual:{palette:[],contrast:4.5,paletteTolerance:25},
     claims:[
-      {id:'C-01',pattern:'(?:India|#1\\s+(?:learning\\s+)?platform|number one)',label:'Ranking',fix:'a leading platform in India',text:'Ranking claims need supporting evidence.'}
+      {id:'C-01',pattern:'(?:India|#1\\s+(?:learning\\s+)?platform|number one)',label:'Ranking',evidence:'',fix:'a leading platform in India',text:'Ranking claims need supporting evidence.'}
     ]
   };
 }
@@ -79,6 +102,55 @@ function allRules(R){
 function nextId(prefix,arr){
   var max=0;arr.forEach(function(x){var n=parseInt(x.id.split('-')[1],10);if(n>max)max=n;});
   return prefix+'-'+String(max+1).padStart(2,'0');
+}
+function validateRules(rules){
+  var errors=[],allowed={company:1,guidelines:1,terms:1,facts:1,claims:1,visual:1,initialAdmin:1};
+  var shapes={
+    guidelines:{id:1,title:1,text:1,check:1,category:1},
+    terms:{id:1,avoid:1,pattern:1,good:1,text:1},
+    facts:{id:1,subject:1,value:1,display:1,pattern:1,owner:1,expires:1,noun:1},
+    claims:{id:1,pattern:1,label:1,evidence:1,fix:1,text:1}
+  };
+  if(!rules||typeof rules!=='object'||Array.isArray(rules))return ['Brand pack must be an object.'];
+  Object.keys(rules).forEach(function(key){if(!allowed[key])errors.push('Unknown brand-pack field: '+key+'.');});
+  if(rules.initialAdmin!=null&&(typeof rules.initialAdmin!=='string'||rules.initialAdmin.length>128))errors.push('initialAdmin must be a valid user ID.');
+  if(typeof rules.company!=='string'||!rules.company.trim()||rules.company.length>120)errors.push('Company name must be 1–120 characters.');
+  var ids={};
+  Object.keys(shapes).forEach(function(listName){
+    var list=rules[listName];
+    if(!Array.isArray(list)||list.length>100){errors.push(listName+' must be an array with no more than 100 items.');return;}
+    list.forEach(function(item,index){
+      var label=listName+'['+index+']';
+      if(!item||typeof item!=='object'||Array.isArray(item)){errors.push(label+' must be an object.');return;}
+      Object.keys(item).forEach(function(key){if(!shapes[listName][key])errors.push(label+' has an unknown field: '+key+'.');});
+      if(typeof item.id!=='string'||! /^[A-Z]-\d{2,4}$/.test(item.id)||ids[item.id])errors.push(label+' must have a unique rule ID.');
+      else ids[item.id]=true;
+      var required=listName==='guidelines'?['title','text']:listName==='terms'?['avoid','pattern','good','text']:
+        listName==='facts'?['subject','value','display','pattern','owner','expires']:['pattern','label','fix','text'];
+      required.forEach(function(key){if(typeof item[key]!=='string'||!item[key].trim())errors.push(label+'.'+key+' is required.');});
+      if(listName==='claims'&&typeof item.evidence!=='string')errors.push(label+'.evidence must be text.');
+      Object.keys(item).forEach(function(key){if(typeof item[key]==='string'&&item[key].length>(key==='text'?2000:500))errors.push(label+'.'+key+' is too long.');});
+      if(item.check!=null&&['tone','absolutes','readability','a11y'].indexOf(item.check)<0)errors.push(label+'.check is not supported.');
+      if(typeof item.pattern==='string'){
+        var suspicious=/\([^)]*(?:[*+]|\{\d+(?:,\d*)?\})[^)]*\)(?:[*+]|\{\d+(?:,\d*)?\})/.test(item.pattern);
+        try{new RegExp(item.pattern,'gi');}catch(e){errors.push(label+'.pattern is not a valid regular expression.');}
+        if(item.pattern.length>200||suspicious)errors.push(label+'.pattern is too complex to run safely.');
+      }
+      if(listName==='facts'&&!/^\d+(?:\.\d+)?$/.test(item.value||''))errors.push(label+'.value must be a non-negative number.');
+      if(listName==='facts'&&!/^\d{4}-\d{2}-\d{2}$/.test(item.expires||''))errors.push(label+'.expires must be a YYYY-MM-DD date.');
+    });
+  });
+  var visual=rules.visual;
+  if(!visual||typeof visual!=='object'||Array.isArray(visual)){errors.push('visual settings are required.');}
+  else{
+    Object.keys(visual).forEach(function(key){if(['palette','contrast','paletteTolerance'].indexOf(key)<0)errors.push('Unknown visual setting: '+key+'.');});
+    if(!Array.isArray(visual.palette)||visual.palette.length>10||visual.palette.some(function(color){return typeof color!=='string'||!/^#[0-9a-f]{6}$/i.test(color);}))errors.push('visual.palette must contain up to 10 hex colors.');
+    if([3,4.5].indexOf(Number(visual.contrast))<0)errors.push('visual.contrast must be 3 or 4.5.');
+    if(!isFinite(Number(visual.paletteTolerance))||Number(visual.paletteTolerance)<1||Number(visual.paletteTolerance)>100)errors.push('visual.paletteTolerance must be between 1 and 100.');
+  }
+  try{if(JSON.stringify(rules).length>500000)errors.push('Brand pack exceeds the safe 500 KB limit.');}
+  catch(e){errors.push('Brand pack must contain serializable data.');}
+  return errors;
 }
 
 function numberValue(raw){
@@ -178,7 +250,10 @@ function runRules(text,R){
         if(m[0].toLowerCase()==='super'&&/^\s+[A-Z]/.test(text.slice(m.index+m[0].length)))return;
         var s=span(m);s.ruleId=g.id;s.category='Tone';s.severity='low';
         s.why='"'+m[0]+'" is slang or an intensifier. The tone rule asks for a warm, professional voice.';
-        s.suggestion=cap(m[0],slang[m[0].toLowerCase()],text,m.index);add(s);
+        var rep=slangFix(m[0],text,m.index);
+        s.suggestion=cap(m[0],rep||slang[m[0].toLowerCase()],text,m.index);
+        if((m[0].toLowerCase()==='gonna'||m[0].toLowerCase()==='wanna')&&!rep){s.suggestion='';s.needsInput=true;s.adviceOnly=true;}
+        add(s);
       });
       var run=0;
       iter(/!+/g,function(m){
@@ -194,7 +269,7 @@ function runRules(text,R){
       iter(/\bguarantee[ds]?\s+(?:100\s?%\s+)?/gi,function(m){
         var s=span(m);s.ruleId=g.id;s.category='Claims';s.severity='high';
         s.why='Promising a guaranteed outcome is not allowed. Outcomes depend on the learner.';
-        s.suggestion='aim for ';add(s);
+        s.suggestion=cap(m[0],guaranteeFix(m,text),text,m.index);add(s);
       });
       iter(/\b100\s?%\s+(?!(?:remote|online|virtual|digital|organic|natural|vegan|recycl|renewable|cotton|self-paced|flexible|asynchronous|hybrid)\b)(?=[A-Za-z])/gi,function(m){
         var s=span(m);s.ruleId=g.id;s.category='Claims';s.severity='high';
@@ -364,12 +439,21 @@ function diffHtml(a,b){
 /* ---------- insights from the event log ---------- */
 function insightRows(events){
   var map={};
-  events.forEach(function(e){
-    var r=map[e.ruleId]||(map[e.ruleId]={ruleId:e.ruleId,category:e.category,total:0,fixed:0,disputed:0,reasons:[]});
+  events.forEach(function(e,index){
+    var r=map[e.ruleId]||(map[e.ruleId]={ruleId:e.ruleId,category:e.category,total:0,fixed:0,disputed:0,reasons:[],people:Object.create(null),disputingPeople:Object.create(null)});
+    var person=typeof e.uid==='string'&&e.uid?'uid:'+e.uid:'event:'+index;
+    r.people[person]=true;
     r.total++;
-    if(e.outcome==='disputed'){r.disputed++;if(e.reason)r.reasons.push(e.reason);}else r.fixed++;
+    if(e.outcome==='disputed'){
+      r.disputed++;r.disputingPeople[person]=true;
+      if(e.reason&&r.reasons.indexOf(e.reason)<0)r.reasons.push(e.reason);
+    }else r.fixed++;
   });
-  return Object.keys(map).map(function(k){var r=map[k];r.rate=r.total?r.disputed/r.total:0;r.gap=r.disputed>=2&&r.rate>=0.5;return r;})
+  return Object.keys(map).map(function(k){
+    var r=map[k];r.uniquePeople=Object.keys(r.people).length;r.uniqueDisputers=Object.keys(r.disputingPeople).length;
+    delete r.people;delete r.disputingPeople;
+    r.rate=r.uniquePeople?r.uniqueDisputers/r.uniquePeople:0;r.gap=r.uniqueDisputers>=2&&r.rate>=0.5;return r;
+  })
     .sort(function(a,b){return b.disputed-a.disputed||b.total-a.total;});
 }
 
@@ -465,7 +549,7 @@ function accuracyReport(R){
 }
 
 BG.engine={TODAY:TODAY,isoPlus:isoPlus,esc:esc,escRe:escRe,fmt:fmt,plural:plural,clone:clone,SAMPLE_DRAFT:SAMPLE_DRAFT,
-  seedRules:seedRules,templateRules:templateRules,brandName:brandName,seedAll:seedAll,freshSession:freshSession,factStatus:factStatus,allRules:allRules,nextId:nextId,
+  seedRules:seedRules,templateRules:templateRules,brandName:brandName,seedAll:seedAll,freshSession:freshSession,factStatus:factStatus,allRules:allRules,nextId:nextId,validateRules:validateRules,
   runRules:runRules,confLabel:confLabel,score:score,readinessLabel:readinessLabel,diffHtml:diffHtml,insightRows:insightRows,reliability:reliability,
   accuracyDataset:accuracyDataset,accuracyReport:accuracyReport,canonicalJson:canonicalJson,checkSnapshot:checkSnapshot,
   fingerprint:fingerprint,visualChecks:visualChecks,visualSnapshot:visualSnapshot,colorDistance:colorDistance,contrastRatio:contrastRatio};

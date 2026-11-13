@@ -9,12 +9,15 @@ var BG=window.BG=window.BG||{};
 var E=BG.engine;
 var cfg=window.BG_CONFIG||{};
 var fbc=cfg.firebase||{};
-var wantFirebase=!!(fbc.apiKey&&fbc.projectId);
+var DEMO_SESSION='bg.demoMode';
+var explicitDemo=false;
+try{explicitDemo=sessionStorage.getItem(DEMO_SESSION)==='1';}catch(e){}
+var wantFirebase=!!(fbc.apiKey&&fbc.projectId)&&!explicitDemo;
 
 var LS_SHARED='bg.shared.v3',LS_USER='bg.user.v3';
 var HINT='bg.hint';
-var shared=E.seedAll(),subs=[],auth=null,db=null;
-var S=BG.store={mode:wantFirebase?'firebase':'local',user:null,note:'',ready:null};
+var shared=E.seedAll(),subs=[],auth=null,db=null,persistedRules=null,creatingAccount=false;
+var S=BG.store={mode:wantFirebase?'firebase':'local',user:null,workspaceId:'',note:'',ready:null};
 
 function clearLegacyLocalData(){
   var CLEANUP='bg.production-clean.v1';
@@ -70,7 +73,9 @@ function isLegacySample(d){
 function initLocal(){
   shared=readLS(LS_SHARED)||E.seedAll();
   if(!shared.rules||!shared.docs||!shared.events)shared=E.seedAll();
+  if(E.validateRules(shared.rules).length)shared=E.seedAll();
   if(/Northwind|fictional demo/i.test(shared.rules.company||''))shared=E.seedAll();
+  persistedRules=clean(shared.rules);
   shared.docs=(shared.docs||[]).filter(function(d){return !isLegacySample(d);});
   shared.events=(shared.events||[]).filter(function(e){return !e.sample;});
   persistLocal();
@@ -106,11 +111,11 @@ function initFirebase(){
         auth.onAuthStateChanged(function(u){
           if(initial){
             initial=false;
-            if(u){attach(u).then(resolve).catch(reject);}
+            if(u){if(creatingAccount)return;attach(u).then(resolve).catch(reject);}
             else resolve(null);
             return;
           }
-          if(u){attach(u).catch(function(e){console.error(e);});}
+          if(u){if(!creatingAccount)attach(u).catch(function(e){console.error(e);});}
           else {S.user=null;setHint();emit();}
         });
       });
@@ -125,36 +130,41 @@ function initFirebase(){
     });
 }
 function attach(u){
-  var uref=db.collection('users').doc(u.uid);
-  var rulesRef=db.collection('brand').doc('rules'),pendingName=null;
-  try{pendingName=sessionStorage.getItem('bg.pendingName');sessionStorage.removeItem('bg.pendingName');sessionStorage.removeItem('bg.pendingRole');}catch(e){}
-  return db.runTransaction(function(tx){
-    return Promise.all([tx.get(uref),tx.get(rulesRef)]).then(function(snaps){
-      var userSnap=snaps[0],rulesSnap=snaps[1];
-      if(userSnap.exists)return userSnap.data();
-      var rec={name:pendingName||u.displayName||(u.email||'').split('@')[0]||'User',email:u.email||'',createdAt:new Date().toISOString()};
-      if(rulesSnap.exists)rec.role='Creator';
-      else{
-        rec.role='Admin';
-        var initialRules=E.templateRules(rec.name?rec.name+"'s company":'');
-        initialRules.initialAdmin=u.uid;
-        tx.set(rulesRef,clean(initialRules));
-      }
-      tx.set(uref,rec);
-      return rec;
+  var uref=db.collection('users').doc(u.uid),pendingName='',inviteToken='';
+  try{
+    pendingName=sessionStorage.getItem('bg.pendingName')||'';
+    inviteToken=sessionStorage.getItem('bg.inviteToken')||'';
+    sessionStorage.removeItem('bg.pendingName');
+  }catch(e){}
+  return uref.get().then(function(snap){
+    if(snap.exists)return snap.data();
+    if(!inviteToken){
+      var missing=new Error('This account is not part of a workspace. Sign in with an invitation link or ask an Admin to invite you.');
+      missing.code='invite_required';
+      throw missing;
+    }
+    return S.acceptInvitation(inviteToken,pendingName).then(function(profile){
+      try{sessionStorage.removeItem('bg.inviteToken');}catch(e){}
+      return profile;
     });
   }).then(function(d){
-    S.user={uid:u.uid,name:d.name||u.displayName||'User',email:u.email||d.email||'',role:d.role||'Creator',photo:d.photo||u.photoURL||''};setHint();
-  }).then(function(){return bootstrap();}).then(listen).then(function(){return S.user;});
+    if(!d||typeof d.workspaceId!=='string'||!/^ws-[A-Za-z0-9_-]{1,128}$/.test(d.workspaceId)||
+      !['Creator','Reviewer','Admin'].includes(d.role)){
+      var invalid=new Error('Your workspace membership is invalid. Ask an Admin to resend the invitation.');
+      invalid.code='invalid_membership';
+      throw invalid;
+    }
+    S.workspaceId=d.workspaceId;
+    S.user={uid:u.uid,name:d.name||u.displayName||'User',email:u.email||d.email||'',role:d.role,photo:d.photo||u.photoURL||'',workspaceId:d.workspaceId};setHint();
+  }).then(function(){return bootstrap();}).then(listen).then(function(){return S.user;}).catch(function(error){
+    if(!S.user&&auth&&auth.currentUser)auth.signOut().catch(function(signOutError){console.error(signOutError);});
+    throw error;
+  });
 }
 function bootstrap(){
-  if(S.user.role!=='Admin')return null;
-  var ref=db.collection('brand').doc('rules');
-  return ref.get().then(function(s){
-    if(s.exists)return null;
-    var rules=E.templateRules(S.user.name?S.user.name+"'s company":'');
-    rules.initialAdmin=S.user.uid;
-    return ref.set(clean(rules));
+  if(!S.user)return null;
+  return db.collection('brandRules').doc(S.user.workspaceId).get().then(function(s){
+    if(!s.exists)throw new Error('Workspace brand rules are missing. Run the documented workspace migration or bootstrap command.');
   });
 }
 function listen(){
@@ -163,18 +173,20 @@ function listen(){
     var got={},need=3;
     function once(k){if(!got[k]){got[k]=1;if(--need===0)res();}}
     function fail(k){return function(e){S.note='Firestore: '+(e&&e.message||e);console.error(e);once(k);emit();};}
-    db.collection('brand').doc('rules').onSnapshot(function(snap){
+    var workspace=S.user.workspaceId;
+    db.collection('brandRules').doc(workspace).onSnapshot(function(snap){
       if(snap.exists){
         var rules=snap.data();
         if(S.user.role==='Admin'&&(/Northwind|fictional demo/i.test(rules.company||'')||(Array.isArray(rules.docs)&&rules.docs.some(function(d){return d.sample;})))){
           rules=E.templateRules(S.user.name+"'s company");
-          db.collection('brand').doc('rules').set(clean(rules)).catch(S._err);
+          db.collection('brandRules').doc(workspace).set(clean(rules)).catch(S._err);
         }
         shared.rules=rules;
+        persistedRules=clean(rules);
       }
       once('r');emit();
     },fail('r'));
-    var docsQuery=db.collection('docs');
+    var docsQuery=db.collection('docs').where('workspaceId','==',workspace);
     if(S.user.role==='Creator')docsQuery=docsQuery.where('owner','==',S.user.uid);
     docsQuery.onSnapshot(function(snap){
       shared.docs=snap.docs.map(function(d){var item=d.data();item.id=item.id||d.id;return item;})
@@ -190,7 +202,7 @@ function listen(){
       });
       once('d');emit();
     },fail('d'));
-    db.collection('events').onSnapshot(function(snap){
+    db.collection('events').where('workspaceId','==',workspace).onSnapshot(function(snap){
       shared.events=snap.docs.map(function(d){return d.data();})
         .filter(function(e){return !e.sample;})
         .sort(function(a,b){return a.at<b.at?-1:1;});
@@ -198,10 +210,10 @@ function listen(){
     },fail('e'));
     db.collection('users').doc(S.user.uid).onSnapshot(function(snap){
       var d=snap.exists?snap.data():null;
-      if(d&&d.role&&d.role!==S.user.role){S.user.role=d.role;setHint();location.reload();}
+      if(d&&d.role&&d.workspaceId===S.user.workspaceId&&(d.role!==S.user.role||d.workspaceId!==S.workspaceId)){S.user.role=d.role;setHint();location.reload();}
     },function(e){console.error(e);});
     if(S.user.role==='Admin'){
-      db.collection('users').onSnapshot(function(snap){
+      db.collection('users').where('workspaceId','==',workspace).onSnapshot(function(snap){
         shared.users=snap.docs.map(function(d){var x=d.data();x.uid=d.id;return x;}).sort(function(a,b){return (a.createdAt||'')<(b.createdAt||'')?-1:1;});
         emit();
       },function(e){console.error(e);});
@@ -215,18 +227,35 @@ S.init=function(){
   if(!S.ready)S.ready=(wantFirebase?initFirebase():initLocal()).then(function(u){setHint();return u;});
   return S.ready;
 };
+S.startDemo=function(){
+  try{sessionStorage.setItem(DEMO_SESSION,'1');}
+  catch(e){return Promise.reject(new Error('The local demo needs session storage enabled in this browser.'));}
+  if(S.ready){
+    if(S.mode==='local')return S.ready;
+    return Promise.reject(new Error('Firebase already started in this tab. Open the demo link in a new tab.'));
+  }
+  S.mode='local';
+  S.ready=Promise.resolve().then(initLocal).then(function(u){setHint();return u;});
+  return S.ready;
+};
 S.saveRules=function(r){
-  delete r.gemini;
-  if(shared.rules.initialAdmin)r.initialAdmin=shared.rules.initialAdmin;
-  var previous=clean(shared.rules);
-  shared.rules=r;emit();
-  if(S.mode==='firebase')return db.collection('brand').doc('rules').set(clean(r)).catch(function(e){
+  var next=clean(r);
+  delete next.gemini;
+  if(shared.rules.initialAdmin)next.initialAdmin=shared.rules.initialAdmin;
+  var errors=E.validateRules(next);
+  if(errors.length)return Promise.reject(new Error('Brand pack is invalid: '+errors[0]));
+  var previous=clean(persistedRules||shared.rules);
+  shared.rules=next;emit();
+  if(S.mode==='firebase')return db.collection('brandRules').doc(S.user.workspaceId).set(clean(next)).then(function(){
+    persistedRules=clean(next);
+  }).catch(function(e){
     shared.rules=previous;emit();return S._err(e);
   });
+  persistedRules=clean(next);
   persistLocal();return Promise.resolve();
 };
 S.saveDoc=function(d){
-  if(S.mode==='firebase'&&S.user)d.owner=d.owner||S.user.uid;
+  if(S.mode==='firebase'&&S.user){d.owner=d.owner||S.user.uid;d.workspaceId=S.user.workspaceId;}
   if(S.mode==='firebase'&&new Blob([JSON.stringify(d)]).size>850000){
     return Promise.reject(new Error('This document is too large to save safely in Firestore. Export the review report and continue in a new document.'));
   }
@@ -271,6 +300,7 @@ S.deleteDoc=function(id){
   persistLocal();return Promise.resolve();
 };
 S.addEvent=function(e){
+  if(S.mode==='firebase'&&S.user)e.workspaceId=S.user.workspaceId;
   shared.events.push(e);emit();
   if(S.mode==='firebase')return db.collection('events').add(clean(e)).catch(function(error){
     shared.events=shared.events.filter(function(item){return item!==e;});emit();return S._err(error);
@@ -303,6 +333,7 @@ S.setRole=function(role){
 };
 S.setUserRole=function(uid,role){
   if(S.mode!=='firebase'||!S.user||S.user.role!=='Admin')return Promise.resolve();
+  if(!(S.users||[]).some(function(user){return user.uid===uid&&user.workspaceId===S.user.workspaceId;}))return Promise.reject(new Error('That person is not a member of this workspace.'));
   if(uid===S.user.uid&&role!=='Admin'){
     var admins=(shared.users||[]).filter(function(u){return u.role==='Admin';}).length;
     if(admins<2){S.note='You are the only Admin. Make someone else an Admin before changing your own role.';emit();return Promise.resolve();}
@@ -310,11 +341,27 @@ S.setUserRole=function(uid,role){
   return db.collection('users').doc(uid).update({role:role}).catch(S._err);
 };
 S.signIn=function(email,pw){return auth.signInWithEmailAndPassword(email,pw);};
-S.signUp=function(email,pw,name,role){
+S.signUp=function(email,pw,name,role,returnUrl){
+  var invite='';
+  try{invite=sessionStorage.getItem('bg.inviteToken')||'';}catch(e){}
+  if(!invite)return Promise.reject({code:'invite_required',message:'An active workspace invitation is required to create an account.'});
   try{sessionStorage.setItem('bg.pendingName',name||'');}catch(e){}
   try{sessionStorage.removeItem('bg.pendingRole');}catch(e){}
+  creatingAccount=true;
+  var created=false;
   return auth.createUserWithEmailAndPassword(email,pw).then(function(cred){
-    return cred.user.updateProfile({displayName:name}).then(function(){return cred;});
+    created=true;
+    return cred.user.updateProfile({displayName:name}).then(function(){
+      return cred.user.sendEmailVerification({url:returnUrl});
+    }).then(function(){
+      return auth.signOut().then(function(){creatingAccount=false;return {email:email,verificationSent:true};});
+    });
+  }).catch(function(error){
+    var cleanup=created&&auth.currentUser?auth.signOut():Promise.resolve();
+    return cleanup.catch(function(signOutError){console.error(signOutError);}).then(function(){
+      creatingAccount=false;
+      throw error;
+    });
   });
 };
 S.google=function(){
@@ -352,4 +399,19 @@ S.idToken=function(){
   if(S.mode==='firebase'&&auth&&auth.currentUser)return auth.currentUser.getIdToken();
   return Promise.resolve('');
 };
+function invitationRequest(body){
+  if(S.mode!=='firebase'||!auth||!auth.currentUser)return Promise.reject(new Error('A signed-in Firebase account is required.'));
+  return auth.currentUser.getIdToken().then(function(token){
+    return fetch(cfg.invitationEndpoint||'/api/invitations',{
+      method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token},body:JSON.stringify(body)
+    });
+  }).then(function(response){
+    return response.json().catch(function(){return {};}).then(function(result){
+      if(!response.ok){var error=new Error(result.error||'Invitation request failed.');error.code=result.code;throw error;}
+      return result;
+    });
+  });
+}
+S.createInvitation=function(email,role){return invitationRequest({action:'create',email:email,role:role}).then(function(result){return result.url;});};
+S.acceptInvitation=function(token,name){return invitationRequest({action:'accept',token:token,name:name||''}).then(function(result){return result.profile;});};
 })();
