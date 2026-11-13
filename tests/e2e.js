@@ -48,31 +48,46 @@ async function newCtx(browser, mode) {
     await page.waitForTimeout(300);
     assert.strictEqual(await page.locator('text=V-02').count(),0);
     assert.strictEqual(await page.locator('text=V-03').count(),0); ok('local: compliant contrast pair and alt text clear visual findings');
-    // demo mode: each role is its own person, so a Reviewer can approve what a Creator submitted
+    // Each demo role has an independent identity and local workspace.
     await page.goto(BASE + 'review.html'); await page.waitForSelector('#draft');
     await page.fill('#title', 'Demo approval fixture'); await page.fill('#draft', 'Welcome to our helpful online service.');
     await page.waitForTimeout(500);
     await page.click('[data-act="submit"]'); await page.waitForURL('**/workflow.html');
-    await page.selectOption('#roleSel', 'Reviewer'); await page.waitForTimeout(300); await page.reload();
-    await page.waitForSelector('.dcard');
-    assert.strictEqual(await page.locator('#scrim.on').count(), 0, 'another role\'s selected document must not open a drawer');
-    await page.locator('.dcard').filter({ hasText: 'Demo approval fixture' }).click();
-    assert.strictEqual(await page.locator('[data-act="approve"]').isDisabled(), true, 'an attached image must be inspected first');
-    await page.check('#visualConfirm');
-    assert.strictEqual(await page.locator('[data-act="approve"]').isDisabled(), false);
-    await page.click('[data-act="approve"]');
-    await page.waitForSelector('text=Approved. This version is locked.'); ok('local: a Reviewer can approve what a Creator submitted');
-    assert.strictEqual(await page.locator('#commentBox').count(), 0); ok('local: comments are closed on an approved version');
+    const creatorSpace=await page.evaluate(()=>({uid:BG.store.user.uid,docs:BG.store.docs.map(d=>d.title)}));
+    assert(creatorSpace.docs.includes('Demo approval fixture'));
+    await page.selectOption('#roleSel', 'Reviewer');
+    await page.waitForFunction(()=>BG.store.user&&BG.store.user.role==='Reviewer');
+    const reviewerSpace=await page.evaluate(()=>({uid:BG.store.user.uid,docs:BG.store.docs.map(d=>d.title)}));
+    assert.notStrictEqual(reviewerSpace.uid,creatorSpace.uid);
+    assert(!reviewerSpace.docs.includes('Demo approval fixture'));
+    await page.selectOption('#roleSel', 'Admin');
+    await page.waitForFunction(()=>BG.store.user&&BG.store.user.role==='Admin');
+    const adminSpace=await page.evaluate(()=>({uid:BG.store.user.uid,docs:BG.store.docs.map(d=>d.title),company:BG.store.rules.company}));
+    assert.notStrictEqual(adminSpace.uid,reviewerSpace.uid);
+    assert(!adminSpace.docs.includes('Demo approval fixture'));
+    assert.strictEqual(adminSpace.company,'Your company');
+    await page.selectOption('#roleSel', 'Creator');
+    await page.waitForFunction(()=>BG.store.user&&BG.store.user.role==='Creator');
+    const restoredCreator=await page.evaluate(()=>BG.store.docs.map(d=>d.title));
+    assert(restoredCreator.includes('Demo approval fixture'));
+    ok('local: Creator, Reviewer, and Admin demo accounts have isolated data and settings');
     for (const p of ['workflow', 'rules', 'insights', 'about', 'index']) { await page.goto(BASE + p + '.html'); await page.waitForTimeout(300); }
     ok('local: all pages load');
     assert.strictEqual(await page.locator('a[href="login.html?demo=1"]').count(),1);
     ok('local: landing page advertises the no-account demo');
     // admin rules page
-    await page.goto(BASE + 'login.html'); await page.evaluate(() => { localStorage.removeItem('bg.user.v3'); });
+    await page.evaluate(() => { localStorage.removeItem('bg.user.v3'); localStorage.removeItem('bg.hint'); });
     await page.goto(BASE + 'login.html'); await page.click('[data-role="Admin"]'); await page.waitForURL('**/rules.html');
     await page.waitForSelector('text=AI engine (Gemini)'); ok('local: admin sees AI engine panel');
     await page.fill('#visualPalette','#0D4033, #F5F1E8'); await page.click('[data-act="saveVisual"]');
     await page.waitForSelector('text=#0D4033'); ok('local: Admin can configure and save the visual brand palette');
+    await page.selectOption('#roleSel','Creator'); await page.waitForFunction(()=>BG.store.user.role==='Creator');
+    const creatorPalette=await page.evaluate(()=>BG.store.rules.visual.palette);
+    assert.deepStrictEqual(creatorPalette,[]);
+    await page.selectOption('#roleSel','Admin'); await page.waitForFunction(()=>BG.store.user.role==='Admin');
+    const adminPalette=await page.evaluate(()=>BG.store.rules.visual.palette);
+    assert.deepStrictEqual(adminPalette,['#0D4033','#F5F1E8']);
+    ok('local: Admin brand settings persist only in the Admin demo account');
     assert.strictEqual(await page.locator('text=Google Gemini API keys').count(), 0); ok('local: old shared-key panel is gone');
     assert.deepStrictEqual(errors, [], 'page errors: ' + errors.join('\n')); ok('local: no JS errors');
     await ctx.close();

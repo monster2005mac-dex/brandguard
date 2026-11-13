@@ -69,22 +69,21 @@ try{
   }
   var BACK='<a class="back-link" href="index.html">&larr; Back to website</a>';
   function demo(){
-    box.innerHTML=BACK+'<h1 style="font-size:30px;margin-bottom:6px">Open the demo workspace</h1>'+
-      '<p class="muted" style="margin-bottom:14px">No account needed. Choose a role to explore a sample workspace. Demo changes stay in this browser and never touch a live workspace.</p>'+
+    box.innerHTML=BACK+'<h1 style="font-size:30px;margin-bottom:6px">Open a demo account</h1>'+
+      '<p class="muted" style="margin-bottom:14px">No account needed. Each demo role has its own local workspace and saved data, separate from real Firebase accounts.</p>'+
       (S.note?'<div class="note warn" style="margin-bottom:14px">'+esc(S.note)+'</div>':'')+
       '<div class="role-cards">'+ROLES.map(function(r){
-        return '<button class="role-card" data-role="'+r[0]+'"><span class="ico"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-6 8-6s8 2 8 6"/></svg></span><b>'+r[0]+'</b><span>'+r[1]+'</span><span class="go">&rarr;</span></button>';}).join('')+'</div>'+
-        '<button class="btn sm ghost" id="resetDemo" type="button" style="margin-top:12px">Reset demo data</button>'+
-        '<p class="small muted" style="margin-top:18px">This is a local sandbox. It does not use real accounts, shared data, or server approval.</p>'+
+        return '<button class="role-card" data-role="'+r[0]+'" aria-label="Open Demo '+r[0]+'"><span class="ico"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-6 8-6s8 2 8 6"/></svg></span><b>Demo '+r[0]+'</b><span>'+r[1]+'</span><span class="go">&rarr;</span></button>';}).join('')+'</div>'+
+        '<button class="btn sm ghost" id="resetDemo" type="button" style="margin-top:12px">Reset all demo accounts</button>'+
+        '<p class="small muted" style="margin-top:18px">Demo data is local to this browser. It never uses real accounts, Firebase workspace data, or server approval.</p>'+
         '<button class="linkbtn small" id="liveLogin" type="button" style="margin-top:8px">Sign in to a workspace</button>';
-    box.querySelectorAll('[data-role]').forEach(function(b){b.addEventListener('click',function(){S.enterLocal('Demo user',b.dataset.role).then(go);});});
+    box.querySelectorAll('[data-role]').forEach(function(b){b.addEventListener('click',function(){S.enterLocal('Demo '+b.dataset.role,b.dataset.role).then(go);});});
     document.getElementById('liveLogin').addEventListener('click',function(){
       try{sessionStorage.removeItem('bg.demoMode');}catch(e){}
       location.replace('login.html');
     });
     document.getElementById('resetDemo').addEventListener('click',function(){
-        S.resetDemo().then(function(){
-          try{Object.keys(localStorage).forEach(function(k){if(k.indexOf('bg.session.')===0)localStorage.removeItem(k);});}catch(e){}
+        S.resetAllDemoData().then(function(){
           location.reload();
         });
     });

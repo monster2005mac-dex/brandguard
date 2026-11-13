@@ -2,7 +2,7 @@
    Two interchangeable backends behind one API:
      local    localStorage demo, used when no Firebase config is present
      firebase Firebase Auth + Cloud Firestore (real-time, shared between users)
-   Shared data: brand rules, documents, events. Per-person data (the draft in progress) is kept in localStorage. */
+   Demo data is isolated by role. Firebase workspaces are shared by their real members. */
 (function(){
 'use strict';
 var BG=window.BG=window.BG||{};
@@ -14,10 +14,15 @@ var explicitDemo=false;
 try{explicitDemo=sessionStorage.getItem(DEMO_SESSION)==='1';}catch(e){}
 var wantFirebase=!!(fbc.apiKey&&fbc.projectId)&&!explicitDemo;
 
-var LS_SHARED='bg.shared.v3',LS_USER='bg.user.v3';
+var LS_USER='bg.user.v3',DEMO_STORAGE='bg.demo.v1.';
 var HINT='bg.hint';
 var shared=E.seedAll(),subs=[],auth=null,db=null,persistedRules=null,creatingAccount=false;
+var localRole='Creator',localSharedKey=demoKey(localRole,'shared');
 var S=BG.store={mode:wantFirebase?'firebase':'local',user:null,workspaceId:'',note:'',ready:null,authReady:false,authError:null};
+
+function demoKey(role,kind){return DEMO_STORAGE+String(role||'Creator').toLowerCase()+'.'+kind;}
+function validDemoRole(role){return ['Creator','Reviewer','Admin'].indexOf(role)>=0;}
+function normalizeDemoRole(role){return validDemoRole(role)?role:'Creator';}
 
 function clearLegacyLocalData(){
   var CLEANUP='bg.production-clean.v1';
@@ -91,8 +96,10 @@ function isLegacySample(d){
 }
 
 /* ---------- local backend ---------- */
-function initLocal(){
-  shared=readLS(LS_SHARED)||E.seedAll();
+function loadLocalWorkspace(role){
+  localRole=normalizeDemoRole(role);
+  localSharedKey=demoKey(localRole,'shared');
+  shared=readLS(localSharedKey)||E.seedAll();
   if(!shared.rules||!shared.docs||!shared.events)shared=E.seedAll();
   if(E.validateRules(shared.rules).length)shared=E.seedAll();
   if(/Northwind|fictional demo/i.test(shared.rules.company||''))shared=E.seedAll();
@@ -100,18 +107,24 @@ function initLocal(){
   shared.docs=(shared.docs||[]).filter(function(d){return !isLegacySample(d);});
   shared.events=(shared.events||[]).filter(function(e){return !e.sample;});
   persistLocal();
-  S.user=readLS(LS_USER);
-  S.authReady=!!S.user;
-  if(S.user){S.user.uid=localUid(S.user.role);writeLS(LS_USER,S.user);}
-  shared.docs.forEach(function(d){if(d.owner==='local')d.owner=localUid('Creator');});
+  shared.docs.forEach(function(d){if(d.owner==='local')d.owner=localUid(localRole);});
   persistLocal();
+}
+function initLocal(){
+  var savedUser=readLS(LS_USER);
+  loadLocalWorkspace(savedUser&&savedUser.role);
+  S.user=savedUser?readLS(demoKey(localRole,'user'))||savedUser:null;
+  S.authReady=!!S.user;
+  if(S.user){
+    S.user.role=localRole;S.user.uid=localUid(localRole);
+    writeLS(demoKey(localRole,'user'),S.user);writeLS(LS_USER,S.user);
+  }
   window.addEventListener('storage',function(ev){
-    if(ev.key===LS_SHARED){var n=readLS(LS_SHARED);if(n){shared=n;emit();}}
+    if(ev.key===localSharedKey){var n=readLS(localSharedKey);if(n){shared=n;persistedRules=clean(n.rules);emit();}}
   });
   return Promise.resolve(S.user);
 }
-function persistLocal(){writeLS(LS_SHARED,shared);}
-/* Demo mode: each role is its own person, so a Reviewer can approve what a Creator submitted. */
+function persistLocal(){writeLS(localSharedKey,shared);}
 function localUid(role){return 'local-'+String(role||'Creator').toLowerCase();}
 
 /* ---------- Firebase backend ---------- */
@@ -354,12 +367,27 @@ S.removeSampleEvents=function(ruleId){
 S._err=function(e){S.note='Save failed: '+(e&&e.message||e);console.error(e);emit();throw e;};
 S.resetDemo=function(){
   if(S.mode==='firebase'){S.note='Reset is only available in local demo mode.';emit();return Promise.resolve();}
-  shared=E.seedAll();persistLocal();emit();return Promise.resolve();
+  shared=E.seedAll();persistedRules=clean(shared.rules);persistLocal();
+  try{localStorage.removeItem('bg.session.v3.'+localUid(localRole));}catch(e){}
+  emit();return Promise.resolve();
+};
+S.resetAllDemoData=function(){
+  if(S.mode==='firebase'){S.note='Reset is only available in local demo mode.';emit();return Promise.resolve();}
+  ['Creator','Reviewer','Admin'].forEach(function(role){
+    writeLS(demoKey(role,'shared'),E.seedAll());
+    try{localStorage.removeItem('bg.session.v3.'+localUid(role));}catch(e){}
+  });
+  shared=readLS(localSharedKey)||E.seedAll();persistedRules=clean(shared.rules);emit();
+  return Promise.resolve();
 };
 
 /* ---------- auth ---------- */
 S.enterLocal=function(name,role){
-  S.user={uid:localUid(role),name:name||role,email:'',role:role,photo:''};S.authReady=true;writeLS(LS_USER,S.user);setHint();return Promise.resolve(S.user);
+  if(!validDemoRole(role))return Promise.reject(new Error('Choose a valid demo role.'));
+  loadLocalWorkspace(role);
+  S.user=readLS(demoKey(localRole,'user'))||{uid:localUid(localRole),name:name||('Demo '+localRole),email:'',role:localRole,photo:''};
+  S.user.uid=localUid(localRole);S.user.role=localRole;S.authReady=true;S.authError=null;
+  writeLS(demoKey(localRole,'user'),S.user);writeLS(LS_USER,S.user);setHint();emit();return Promise.resolve(S.user);
 };
 S.setRole=function(role){
   if(!S.user)return Promise.resolve();
@@ -368,8 +396,13 @@ S.setRole=function(role){
     emit();
     return Promise.resolve();
   }
-  S.user.role=role;S.user.uid=localUid(role);
-  writeLS(LS_USER,S.user);setHint();return Promise.resolve();
+  if(!validDemoRole(role))return Promise.reject(new Error('Choose a valid demo role.'));
+  loadLocalWorkspace(role);
+  S.user=readLS(demoKey(localRole,'user'))||{uid:localUid(localRole),name:'Demo '+localRole,email:'',role:localRole,photo:''};
+  S.user.uid=localUid(localRole);S.user.role=localRole;S.workspaceId='';S.authReady=true;S.authError=null;
+  writeLS(demoKey(localRole,'user'),S.user);writeLS(LS_USER,S.user);
+  try{sessionStorage.removeItem('bg.selDoc');sessionStorage.removeItem('bg.openDoc');}catch(e){}
+  setHint();emit();return Promise.resolve(S.user);
 };
 S.setUserRole=function(uid,role){
   if(S.mode!=='firebase'||!S.user||S.user.role!=='Admin')return Promise.resolve();
@@ -434,7 +467,7 @@ S.setPhoto=function(url){
       u.photo=previous;setHint();emit();return S._err(e);
     });
   }
-  u.photo=url||'';writeLS(LS_USER,u);setHint();emit();return Promise.resolve();
+  u.photo=url||'';writeLS(demoKey(localRole,'user'),u);writeLS(LS_USER,u);setHint();emit();return Promise.resolve();
 };
 S.idToken=function(){
   if(S.mode==='firebase'&&auth&&auth.currentUser)return auth.currentUser.getIdToken();

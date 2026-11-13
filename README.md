@@ -15,12 +15,12 @@ npm run check
 npm start
 ```
 
-Open http://localhost:4173. Local demo data stays in this browser; use **Login** to choose a demo role. No Firebase credentials or Gemini key are needed for deterministic checks. Production accounts are invitation-only.
+Open http://localhost:4173. Demo Creator, Reviewer, and Admin are separate local accounts with isolated data in this browser. No Firebase credentials or Gemini key are needed for deterministic checks. Real accounts are invitation-only.
 
 ## Public demo access
 The project URL is [brandguard-ruby.vercel.app](https://brandguard-ruby.vercel.app/). The URL responded successfully when checked, but the currently deployed HTML does not yet expose the updated no-account demo entry. The repository source provides that entry: after redeploying this version, choose **Explore demo · no account needed** from the landing page or open `/login.html?demo=1`. Select Creator, Reviewer, or Admin; no email or password is shared or required.
 
-The demo is an isolated local sandbox: changes stay in that browser and do not reach Firebase, other visitors, or the production workspace. Its approval flow is local simulation, not server-verified production approval. A **Sign in to a workspace** control returns to Firebase login. Explicit demo selection is required; a Firebase startup failure never silently switches modes. No shared production credentials are published.
+Each demo role has an isolated local sandbox: changes stay in that browser and do not reach Firebase, other demo roles, other visitors, or the production workspace. Demo roles cannot collaborate on the same draft; use real Firebase accounts for a shared Creator/Reviewer workflow. Demo actions are not server-verified production approvals. A **Sign in to a workspace** control returns to Firebase login. Explicit demo selection is required; a Firebase startup failure never silently switches modes. No shared production credentials are published.
 
 ## Turn on Firebase (real accounts, shared data, real-time)
 For all Round 3 server features, deploy the site/API on Vercel with Firebase as the auth/database backend. Firebase Hosting alone does not provide `/api/approve` or `/api/invitations`.

@@ -104,7 +104,7 @@ function resizePhoto(file,cb){
 function userCard(u){
   var initial=esc((u.name||'?').charAt(0).toUpperCase());
   return '<button class="who profile-link" data-ui="profile" type="button">'+(u.photo?'<img class="avatar avatar-photo" src="'+esc(u.photo)+'" alt="">':'<div class="avatar">'+initial+'</div>')+'<div><b>'+esc(u.name||'User')+'</b><span class="small muted">'+esc(u.email||'Signed in')+'</span><span class="sidebar-role">'+esc(u.role||'')+'</span></div><span class="profile-arrow">›</span></button>'+
-    '<div class="field"><label for="roleSel">Acting as</label>'+(
+    '<div class="field"><label for="roleSel">Demo account</label>'+(
       BG.store.mode==='firebase'
         ?'<div class="current-role">'+esc(u.role)+'</div>'
         :'<select id="roleSel">'+ROLES.map(function(r){return '<option'+(r===u.role?' selected':'')+'>'+r+'</option>';}).join('')+'</select>'
@@ -128,7 +128,7 @@ function paintChrome(){
   var mu=document.getElementById('mobileUser');
   if(mu)mu.innerHTML=BG.store.mode==='firebase'
     ?'<button class="top-user" type="button" data-ui="profile"><span>'+esc(u.name||'User')+'</span><small>'+esc(u.email||'')+' · '+esc(u.role||'')+'</small></button>'
-    :'<select id="roleSelM" aria-label="Acting as">'+ROLES.map(function(r){return '<option'+(r===u.role?' selected':'')+'>'+r+'</option>';}).join('')+'</select>';
+    :'<select id="roleSelM" aria-label="Demo account">'+ROLES.map(function(r){return '<option'+(r===u.role?' selected':'')+'>'+r+'</option>';}).join('')+'</select>';
   var bm=document.getElementById('modeBadge');
   bm.textContent=BG.store.mode==='firebase'?'Live: Firebase':'Local demo';
   bm.className='badge-mode'+(BG.store.mode==='firebase'?' live':'');
@@ -192,7 +192,7 @@ BG.shell={
         if(e.target.id==='roleSel'||e.target.id==='roleSelM'){
           BG.store.setRole(e.target.value).then(function(){
             paintChrome();if(opts.onRole)opts.onRole();if(opts.onData)opts.onData();
-            UI.toast(BG.store.mode==='firebase'?'Roles are controlled by Firebase in live mode.':'Now acting as '+e.target.value+'.');
+            UI.toast(BG.store.mode==='firebase'?'Roles are controlled by Firebase in live mode.':'Switched to the '+e.target.value+' demo account.');
           });
         }
       });

@@ -248,7 +248,7 @@ document.addEventListener('click',function(ev){
       UI.closeModal();save();render();UI.toast(id+' updated.');
     }catch(e){UI.toast('Invalid JSON: '+e.message);}
     return;}
-  if(a==='reset'){if(!window.confirm('Reset all demo data in this browser? This cannot be undone.'))return;S.resetDemo().then(function(){UI.toast('Demo data reset.');}).catch(function(e){UI.toast('Reset failed: '+(e&&e.message||'try again'));});return;}
+  if(a==='reset'){if(!window.confirm('Reset the Admin demo account data in this browser? Creator and Reviewer demo data will not be changed.'))return;S.resetDemo().then(function(){UI.toast('Admin demo data reset.');}).catch(function(e){UI.toast('Reset failed: '+(e&&e.message||'try again'));});return;}
   if(a==='del'){if(!window.confirm('Delete '+id+'? Findings that cite it will stop appearing.'))return;['guidelines','terms','facts','claims'].forEach(function(k){R[k]=R[k].filter(function(x){return x.id!==id;});});save();UI.toast(id+' deleted.');return;}
   if(a==='evidence'){var cc=R.claims.find(function(x){return x.id===id;});if(cc){cc.evidence=v('ev-'+id);save();UI.toast(cc.evidence?'Evidence saved. Matching claims no longer need sign-off.':'Evidence cleared.');}return;}
   if(a==='submitAdd'){
