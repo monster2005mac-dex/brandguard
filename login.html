@@ -97,7 +97,7 @@ try{
         (mode==='up'?'<div class="field"><label for="nm">Name</label><input type="text" id="nm" autocomplete="name"></div>':'')+
         '<div class="field"><label for="em">Email</label><input type="email" id="em" autocomplete="email" inputmode="email"></div>'+
         '<div class="field"><label for="pw">Password</label><div class="pw-wrap"><input type="password" id="pw" autocomplete="'+(mode==='in'?'current-password':'new-password')+'"><button class="pw-toggle" type="button" id="pwt" aria-label="Show password">Show</button></div>'+(mode==='in'?'<button class="linkbtn small" type="button" id="forgot">Forgot password?</button>':'')+'</div>'+
-        (mode==='up'?'<div class="note" style="margin-top:2px">This invitation is private and expires after seven days. Verify your email before joining the workspace.</div>':inviteToken?'<div class="note" style="margin-top:2px">Invitation link detected. Sign in with the invited email address to join.</div>':'<div class="note" style="margin-top:2px">Workspace access is invitation-only. Ask a workspace Admin for an invitation link.</div>')+
+        (mode==='up'?'<div class="note" style="margin-top:2px">This invitation is private and expires after seven days. Verify your email before joining the workspace.</div>':inviteToken?'<div class="note" style="margin-top:2px">Invitation link detected. Sign in with the invited email address to join.</div>':'<div class="note" style="margin-top:2px">The configured first Admin is provisioned on first verified sign-in. All other accounts need an invitation link.</div>')+
         '<div id="err" class="note warn" role="alert" hidden></div>'+
         '<button class="btn primary lg" type="submit" id="go">'+(mode==='in'?'Sign in':'Create account')+'</button>'+
         '<button class="btn lg" type="button" id="g">Continue with Google</button>'+
@@ -137,6 +137,10 @@ try{
     var c=e&&e.code||'';
     if(c==='invite_required')return 'Your Firebase account is valid, but it is not linked to a BrandGuard workspace. Ask a workspace Admin for an invitation and use its link to join. Public sign-up is disabled.';
     if(c==='verified_email_required')return 'Verify the invited email address using the link we sent, then sign in again.';
+    if(c==='not_configured')return 'First Admin setup is not configured on the server. Ask the deployment owner to set INITIAL_ADMIN_EMAIL and BOOTSTRAP_WORKSPACE_NAME.';
+    if(c==='workspace_conflict')return 'Workspace data already exists for a different account. Nothing was changed; ask the deployment owner to check the Admin UID.';
+    if(c==='provisioning_failed')return 'The initial workspace could not be created. Try again or ask the deployment owner to check the server logs.';
+    if(c==='invalid_workspace'||c==='invalid_default_rules')return 'The initial workspace configuration is invalid. Ask the deployment owner to check its settings.';
     if(c==='invitation_email_mismatch')return 'Sign in with the email address this invitation was sent to.';
     if(c==='invitation_expired'||c==='invitation_not_found')return 'This invitation has expired or was already used. Ask an Admin for a new link.';
     if(c==='already_member')return 'This account already belongs to a workspace.';
@@ -179,7 +183,7 @@ try{
     if(S.mode==='firebase')live();else demo();
   }).catch(function(error){
     sessionCheckDone=true;clearTimeout(sessionCheckTimer);
-    if(error&&['invite_required','verified_email_required','invitation_email_mismatch','invitation_expired','invitation_not_found','already_member','invalid_invitation','invalid_membership','profile_load_timeout','workspace_not_initialized'].indexOf(error.code)>=0||
+    if(error&&['invite_required','verified_email_required','not_configured','workspace_conflict','provisioning_failed','invalid_workspace','invalid_default_rules','invitation_email_mismatch','invitation_expired','invitation_not_found','already_member','invalid_invitation','invalid_membership','profile_load_timeout','workspace_not_initialized'].indexOf(error.code)>=0||
       error&&/permission-denied|unavailable|network-request-failed/.test(error.code||'')){
       live();
       var notice=document.getElementById('err');

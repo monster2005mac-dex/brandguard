@@ -34,7 +34,9 @@ For all Round 3 server features, deploy the site/API on Vercel with Firebase as 
 
 #### Create the first workspace Admin
 
-Self-registration is disabled. Create the first Firebase Authentication user in the Firebase console, verify the email address, then bootstrap the workspace once from a trusted local shell. Set `FIREBASE_SERVICE_ACCOUNT_JSON`, `BOOTSTRAP_ADMIN_UID` (the Auth user's UID), and `BOOTSTRAP_WORKSPACE_NAME` in that shell and run:
+Self-registration is disabled. On Vercel, set `INITIAL_ADMIN_EMAIL` to the exact, verified Firebase Authentication email allowed to create the first Admin, and set `BOOTSTRAP_WORKSPACE_NAME`. With `FIREBASE_SERVICE_ACCOUNT_JSON` also configured, the first sign-in by that verified account creates the workspace, brand rules, and Admin profile in a server-side transaction. Other accounts remain invitation-only. Existing matching workspace data is not overwritten; conflicting data stops provisioning.
+
+For a fresh deployment that is not using the Vercel API, you can still bootstrap once from a trusted local shell by setting `FIREBASE_SERVICE_ACCOUNT_JSON`, `BOOTSTRAP_ADMIN_UID` (the Auth user's UID), and `BOOTSTRAP_WORKSPACE_NAME`, then running:
 
 ```sh
 npm run bootstrap:admin
@@ -67,11 +69,13 @@ For an existing deployment with the legacy `brand/rules` singleton, back up Fire
 2. Add environment variables:
    - `GEMINI_API_KEY`: your Google AI Studio key (secret, server only).
    - `FIREBASE_SERVICE_ACCOUNT_JSON`: a Firebase service-account JSON value. Required by server-verified approvals, invitations, and shared AI rate limiting. Keep it in Vercel only; never commit it.
+   - `INITIAL_ADMIN_EMAIL`: the exact email allowed to provision the first Admin on first verified sign-in.
+   - `BOOTSTRAP_WORKSPACE_NAME`: the name of the initial workspace created for that Admin.
    - `GEMINI_MODEL` (optional; default `gemini-2.5-flash`).
    - `APP_ORIGIN` (optional; set only when the API is called from another domain).
 3. Deploy, then add the Vercel domain in Firebase **Authentication > Settings > Authorized domains**.
 4. Publish the security rules: `firebase deploy --only firestore:rules`. They deny direct client writes of `Approved` status.
-5. Create and bootstrap the initial Admin as described above, then sign in. The Admin issues invitations from **Brand rules > Team**; public sign-up is disabled.
+5. Create the initial Firebase Authentication account with `INITIAL_ADMIN_EMAIL`, verify it, and sign in; the Vercel endpoint provisions the first workspace automatically. The Admin issues invitations from **Brand rules > Team**; public sign-up is disabled.
 6. On **Brand rules**, click **Test connection**, then **Import from guidelines document**.
 
 Nothing secret is stored in Firestore or sent to the browser. The old shared "Gemini keys" feature was removed.
@@ -117,7 +121,7 @@ For Firestore authorization tests, run `npx --yes firebase-tools@14 emulators:ex
 - Responsive interface, profile photos, and light/dark themes.
 
 ## Architecture
-The static HTML/CSS/vanilla-JavaScript client uses a pure shared rule engine for deterministic text and visual checks. Firebase Authentication identifies users; Firestore stores workspace membership, brand packs, versions, comments, and audit data. Firestore rules enforce workspace boundaries, restrict role changes, and prevent direct client approvals or invitation writes. A trusted bootstrap script provisions the initial Admin; `/api/invitations` issues hashed, expiring, email-bound invites and accepts them transactionally. The Vercel `/api/approve` endpoint verifies Firebase ID tokens with Firebase Admin, rechecks the exact stored version and workspace brand rules, re-samples attached image colors with `sharp`, and writes the approval plus SHA-256 fingerprints. `/api/gemini` is an authenticated serverless proxy with a shared Firestore rate limit; its API key stays in the server environment. The browser-only demo mode uses local storage and is not a substitute for Firebase server-side authorization.
+The static HTML/CSS/vanilla-JavaScript client uses a pure shared rule engine for deterministic text and visual checks. Firebase Authentication identifies users; Firestore stores workspace membership, brand packs, versions, comments, and audit data. Firestore rules enforce workspace boundaries, restrict role changes, and prevent direct client approvals or invitation writes. The Vercel `/api/bootstrap-admin` endpoint provisions the first Admin only for the configured, verified email; `/api/invitations` issues hashed, expiring, email-bound invites and accepts them transactionally. The Vercel `/api/approve` endpoint verifies Firebase ID tokens with Firebase Admin, rechecks the exact stored version and workspace brand rules, re-samples attached image colors with `sharp`, and writes the approval plus SHA-256 fingerprints. `/api/gemini` is an authenticated serverless proxy with a shared Firestore rate limit; its API key stays in the server environment. The browser-only demo mode uses local storage and is not a substitute for Firebase server-side authorization.
 
 ## Post-event roadmap
 1. Add OCR and sampled-region selection so image text/background colors can be detected instead of selected by the creator.

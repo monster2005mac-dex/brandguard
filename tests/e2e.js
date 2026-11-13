@@ -109,6 +109,28 @@ async function newCtx(browser, mode) {
       if (/independent brand-rule verifier/.test(body.prompt)) return r.fulfill({ json: { text: JSON.stringify([{ index: 0, supported: true, confidence: 0.9 }]) } });
       return r.fulfill({ json: { text: '[]' } });
     });
+    await ctx.route('**/api/bootstrap-admin', async r => {
+      const token = (r.request().headers()['authorization'] || '').replace(/^Bearer /, '');
+      if (token !== 'tok-u-first') return r.fulfill({ status: 404, json: { code: 'not_initial_admin' } });
+      const workspaceId = 'ws-u-first';
+      const profile = {
+        name: 'First Admin', email: 'first-admin@acme.test', role: 'Admin',
+        workspaceId, createdAt: new Date().toISOString(), photo: ''
+      };
+      const rules = {
+        company: 'Acme Bank', initialAdmin: 'u-first',
+        guidelines: [], terms: [], facts: [], claims: [],
+        visual: { palette: [], contrast: 4.5, paletteTolerance: 25 }
+      };
+      await page.evaluate(({ profile, rules, workspaceId }) => {
+        const db = JSON.parse(localStorage.getItem('fake.db') || '{}');
+        db['users/u-first'] = profile;
+        db['workspaces/' + workspaceId] = { name: rules.company, initialAdmin: 'u-first', schemaVersion: 1 };
+        db['brandRules/' + workspaceId] = rules;
+        localStorage.setItem('fake.db', JSON.stringify(db));
+      }, { profile, rules, workspaceId });
+      return r.fulfill({ json: { profile, created: true } });
+    });
     await ctx.route('**/api/invitations', async r => {
       const body = JSON.parse(r.request().postData());
       if (body.action === 'create') {
@@ -151,10 +173,25 @@ async function newCtx(browser, mode) {
       }));
       localStorage.setItem('fake.accts', JSON.stringify({
         'asha@acme.test': { uid: 'u1', email: 'asha@acme.test', displayName: 'Asha Admin', emailVerified: true, pw: 'secret12' },
-        'unlinked@acme.test': { uid: 'u-unlinked', email: 'unlinked@acme.test', displayName: 'Unlinked User', emailVerified: true, pw: 'secret12' }
+        'unlinked@acme.test': { uid: 'u-unlinked', email: 'unlinked@acme.test', displayName: 'Unlinked User', emailVerified: true, pw: 'secret12' },
+        'first-admin@acme.test': { uid: 'u-first', email: 'first-admin@acme.test', displayName: 'First Admin', emailVerified: true, pw: 'secret12' }
       }));
     });
     assert.strictEqual(await page.locator('[data-m="up"]').count(), 0); ok('live: open self-registration is hidden');
+    await page.fill('#em', 'first-admin@acme.test'); await page.fill('#pw', 'secret12'); await page.click('#go');
+    await page.waitForURL('**/rules.html', { timeout: 8000 });
+    const firstLoginAdmin = await page.evaluate(() => JSON.parse(localStorage.getItem('fake.db'))['users/u-first']);
+    assert.strictEqual(firstLoginAdmin.role, 'Admin');
+    assert.strictEqual(firstLoginAdmin.workspaceId, 'ws-u-first');
+    ok('live: the configured first Admin is provisioned automatically on first login');
+    await page.evaluate(() => {
+      localStorage.removeItem('fake.auth'); localStorage.removeItem('bg.hint');
+      const accounts = JSON.parse(localStorage.getItem('fake.accts') || '{}');
+      delete accounts['first-admin@acme.test'];
+      localStorage.setItem('fake.accts', JSON.stringify(accounts));
+    });
+    await page.goto(BASE + 'login.html');
+    await page.waitForSelector('[data-m="in"]');
     await page.fill('#em', 'unlinked@acme.test'); await page.fill('#pw', 'secret12'); await page.click('#go');
     await page.waitForFunction(() => {
       const error = document.querySelector('#err');
@@ -207,7 +244,7 @@ async function newCtx(browser, mode) {
     assert(importModal.includes('characters in 8 sections'));
     assert(importModal.includes('remaining text was not checked'));
     ok('live: long guideline import analyzes multiple sections and discloses its upper bound');
-    assert(geminiPosts[0].auth === 'Bearer tok-u1'); ok('live: AI call carries the signed-in ID token');
+    assert(geminiPosts.some(post => post.auth === 'Bearer tok-u1')); ok('live: AI call carries the signed-in ID token');
     await page.click('[data-act="confirmImport"]');
     await page.waitForTimeout(300);
     await page.click('[data-t="terms"]'); assert((await page.textContent('#page')).includes('customer'));

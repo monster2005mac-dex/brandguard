@@ -183,9 +183,12 @@ function attach(u){
   return uref.get().then(function(snap){
     if(snap.exists)return snap.data();
     if(!inviteToken){
-      var missing=new Error('This account is not part of a workspace. Sign in with an invitation link or ask an Admin to invite you.');
-      missing.code='invite_required';
-      throw missing;
+      return provisionInitialAdmin(u).catch(function(error){
+        if(error.code!=='not_initial_admin')throw error;
+        var missing=new Error('This account is not part of a workspace. Sign in with an invitation link or ask an Admin to invite you.');
+        missing.code='invite_required';
+        throw missing;
+      });
     }
     return S.acceptInvitation(inviteToken,pendingName).then(function(profile){
       try{sessionStorage.removeItem('bg.inviteToken');}catch(e){}
@@ -496,6 +499,21 @@ function invitationRequest(body){
     return response.json().catch(function(){return {};}).then(function(result){
       if(!response.ok){var error=new Error(result.error||'Invitation request failed.');error.code=result.code;throw error;}
       return result;
+    });
+  });
+}
+function provisionInitialAdmin(user){
+  if(S.mode!=='firebase'||!auth||!auth.currentUser||auth.currentUser.uid!==user.uid){
+    return Promise.reject(new Error('The signed-in Firebase account changed during workspace setup.'));
+  }
+  return auth.currentUser.getIdToken().then(function(token){
+    return fetch(cfg.initialAdminEndpoint||'/api/bootstrap-admin',{
+      method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token},body:'{}'
+    });
+  }).then(function(response){
+    return response.json().catch(function(){return {};}).then(function(result){
+      if(!response.ok){var error=new Error(result.error||'Initial Admin setup failed.');error.code=result.code;throw error;}
+      return result.profile;
     });
   });
 }

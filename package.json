@@ -5,7 +5,7 @@
   "scripts": {
     "start": "python3 -m http.server 4173",
     "check": "for file in assets/js/*.js api/*.js functions/*.js tests/*.js; do node --check \"$file\" || exit 1; done",
-    "test": "node tests/engine.test.js && node tests/ai.test.js && node tests/gemini.test.js && node tests/invitations.test.js && node tests/csp.test.js && node tests/approval.test.js",
+    "test": "node tests/engine.test.js && node tests/ai.test.js && node tests/gemini.test.js && node tests/invitations.test.js && node tests/bootstrap-admin.test.js && node tests/csp.test.js && node tests/approval.test.js",
     "test:rules": "node tests/firestore-rules.test.js",
     "bootstrap:admin": "node scripts/bootstrap-admin.js",
     "migrate:workspace": "node scripts/migrate-single-workspace.js"

@@ -5,7 +5,7 @@
 2. `firebase deploy --only firestore:rules`
 3. Vercel: import repo, set `GEMINI_API_KEY`, `FIREBASE_API_KEY`, and `FIREBASE_SERVICE_ACCOUNT_JSON`, deploy. The service-account JSON is required for server-verified approvals; keep it in Vercel secrets only.
 4. Firebase → Authentication → Settings → Authorized domains: add your `*.vercel.app` domain.
-5. Open the site, **sign up first** with your own email (you become Admin).
+5. Set `INITIAL_ADMIN_EMAIL` and `BOOTSTRAP_WORKSPACE_NAME` in Vercel. Create and verify that Firebase Authentication account, then sign in; the first workspace Admin is provisioned automatically. Public sign-up remains disabled.
 6. Brand rules → **Test connection** (should say Gemini replied). If not: check the env vars, redeploy.
 7. Create two more accounts in other browsers/incognito (Creator, and one you promote to Reviewer).
 8. Do the full demo below once. Keep the sample guidelines file handy (any 1-2 page brand guide as PDF/DOCX).
@@ -21,6 +21,6 @@
 ## 3. Questions judges will ask
 - *Why not just ask ChatGPT?* No source rule, no expiry/ownership of facts, no approval trail, no way to learn which rules are unclear.
 - *Hallucinations?* Exact rules are deterministic. AI findings must cite a real rule ID and quote text that exists, or they are dropped and counted.
-- *Security?* Firestore limits role and document writes; the first Admin and rules document are created in one transaction; the approval endpoint rechecks the exact version and high-severity findings. Gemini keys stay server-side; AI calls require an ID token and have per-instance rate limits; client events are append-only.
+- *Security?* Firestore limits role and document writes; the verified, configured first Admin and rules document are created server-side in one transaction; the approval endpoint rechecks the exact version and high-severity findings. Gemini keys stay server-side; AI calls require an ID token and have per-instance rate limits; client events are append-only.
 - *Data privacy?* Draft + rule list go to Gemini only when a person clicks a button.
 - *What's next?* Image/layout checks, Slack/CMS plug-ins, multilingual rules, evidence file uploads.
