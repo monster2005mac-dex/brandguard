@@ -47,6 +47,9 @@ async function request(body){
   const pixel=await sharp({create:{width:96,height:96,channels:3,background:'#0D4033'}}).jpeg({quality:100}).toBuffer();
   const dataUrl='data:image/jpeg;base64,'+pixel.toString('base64'),colors=await handler.dominantColors(dataUrl);
   assert(colors.length>0&&E.colorDistance(colors[0],'#0D4033')<12,'server image sampling should preserve the dominant color');
+  await assert.rejects(handler.dominantColors('x'.repeat(220001)),error=>error.code==='invalid_image');
+  const oversized=await sharp({create:{width:1281,height:1,channels:3,background:'#0D4033'}}).jpeg().toBuffer();
+  await assert.rejects(handler.dominantColors('data:image/jpeg;base64,'+oversized.toString('base64')),error=>error.code==='invalid_image');
 
   makeFixture('Our learners have flexible access.');
   const approved=await request({});

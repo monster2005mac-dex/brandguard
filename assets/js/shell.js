@@ -197,6 +197,10 @@ BG.shell={
         }
       });
       return BG.ai.init().then(function(){return opts.onReady(user);});
+    }).catch(function(error){
+      var message=error&&error.message||'The workspace could not be loaded.';
+      document.body.innerHTML='<main class="auth"><section class="form"><div class="box"><h1>Workspace unavailable</h1><p class="note warn">'+esc(message)+'</p><p class="muted">Your account data was not switched to a local demo. Check the Firebase configuration or connection, then reload.</p><div class="row"><button class="btn primary" type="button" id="reloadWorkspace">Try again</button><a class="btn" href="login.html">Sign in</a></div></div></section></main>';
+      document.getElementById('reloadWorkspace').addEventListener('click',function(){location.reload();});
     });
   }
 };

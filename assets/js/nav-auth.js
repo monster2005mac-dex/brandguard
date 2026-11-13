@@ -33,7 +33,10 @@ function verify(){
   load('assets/js/firebase-config.js').then(function(){return load('assets/js/engine.js');}).then(function(){return load('assets/js/store.js');})
     .then(function(){return window.BG.store.init();})
     .then(function(){paint(readHint());})
-    .catch(function(){});
+    .catch(function(){
+      try{localStorage.removeItem('bg.hint');}catch(e){}
+      paint(null);
+    });
   /* keep the nav right if the person signs out in another tab */
   window.addEventListener('storage',function(e){if(e.key==='bg.hint')paint(readHint());});
 }

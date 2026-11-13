@@ -154,7 +154,10 @@ function render(){
 function refreshPanes(){recompute();var m=$('marked'),f=$('findings');if(m)m.innerHTML=markedHtml();if(f)f.innerHTML=findingsHtml();}
 
 /* ---------- actions ---------- */
-function logEvent(f,outcome,reason){S.addEvent({ruleId:f.ruleId,category:f.category,outcome:outcome,at:new Date().toISOString(),reason:reason||'',by:S.user.role});}
+function logEvent(f,outcome,reason){
+  S.addEvent({ruleId:f.ruleId,category:f.category,outcome:outcome,at:new Date().toISOString(),reason:reason||'',by:S.user.role,uid:S.user.uid})
+    .catch(function(error){UI.toast('The finding was updated, but its audit event could not be saved: '+(error&&error.message||'try again later'));});
+}
 function resolveWith(f,rep,outcome){
   ss.text=ss.text.slice(0,f.start)+rep+ss.text.slice(f.end);
   ss.resolved.push({ruleId:f.ruleId,quote:f.quote,replacement:rep,outcome:outcome});
@@ -181,12 +184,14 @@ function saveVersion(skipSave){
   var last=d.versions[d.versions.length-1];
   var sameImage=(prevImage&&nextImage?prevImage.dataUrl===nextImage.dataUrl:!(prevImage||nextImage))&&prevVisual===JSON.stringify(nextVisual||null);
   var unchanged=!!(last&&last.text===ss.text&&last.summary&&last.summary.rulesFingerprint===summary.rulesFingerprint&&sameImage&&d.title===ss.title.trim()&&(d.intent||'')===(ss.intent||'')&&d.status!=='Approved'&&d.status!=='Changes requested');
+  var previousStatus=d.status;
   d.title=ss.title.trim();d.type=ss.type;d.intent=ss.intent||'';d.image=nextImage;d.visual=nextVisual;
   if(unchanged){U.unchanged=true;persist();return d;}
+  if(d.versions.length>=100){UI.toast('This document reached the 100-version limit. Export its review report and continue in a new document.');return null;}
   var n=d.versions.length+1;
   d.versions.push({n:n,text:ss.text,at:new Date().toISOString(),by:role,summary:summary});
-  addAudit(d,role,'Saved version '+n);
-  if(d.status==='Approved'||d.status==='Changes requested'){addAudit(d,'System','Status reset to Draft because the content changed. It needs review again.');d.status='Draft';}
+  if(d.status==='Approved'||d.status==='Changes requested')d.status='Draft';
+  addAudit(d,role,'Saved version '+n+(previousStatus==='Approved'||previousStatus==='Changes requested'?' and reset status from '+previousStatus+' to Draft':''));
   if(!skipSave){
     var save=S.saveDoc(d);
     if(save&&save.catch)save.catch(function(e){console.error('Draft save failed:',e);UI.toast('Could not save to the workspace: '+(e&&e.message||'check your connection')+'. Your draft is kept in this browser.');});
@@ -292,7 +297,9 @@ document.addEventListener('click',function(ev){
     var unchangedVersion=false,d2=saveVersion(true);if(!d2)return;unchangedVersion=U.unchanged;
     if(existing&&existing.status==='In review'){UI.toast('This draft is already in review.');return;}
     U.busy=true;el.disabled=true;
-    d2.status='In review';addAudit(d2,S.user.role,'Submitted version '+d2.versions.length+' for approval');
+    d2.status='In review';
+    if(unchangedVersion)addAudit(d2,S.user.role,'Submitted version '+d2.versions.length+' for approval');
+    else d2.audit[d2.audit.length-1].what='Submitted version '+d2.versions.length+' for approval'+(previousStatus==='Approved'||previousStatus==='Changes requested'?' after reset from '+previousStatus:'');
     S.saveDoc(d2).then(function(){
       BG.session.clear();
       ss=E.freshSession();
@@ -301,7 +308,8 @@ document.addEventListener('click',function(ev){
     }).catch(function(e){
       U.busy=false;el.disabled=false;
       d2.status=previousStatus==='In review'?'Draft':previousStatus;
-      if(!unchangedVersion){d2.versions.pop();d2.audit.splice(Math.max(0,d2.audit.length-2),2);}else d2.audit.pop();
+      if(!unchangedVersion)d2.versions.pop();
+      d2.audit.pop();
       persist();
       UI.toast('Submission failed: '+(e&&e.message||'Please try again.'));
     });

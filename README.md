@@ -27,7 +27,7 @@ For all Round 3 server features, deploy the site/API on Vercel with Firebase as 
 6. Publish the security rules: `npm i -g firebase-tools`, `firebase login`, `firebase init` (choose existing project; Hosting + Firestore; do not overwrite `firebase.json` or `firestore.rules`), then `firebase deploy --only firestore:rules`.
 7. For a static-only preview, you can deploy Firebase Hosting with `firebase deploy --only hosting`. That does not include `/api/approve`; use the Vercel setup below for the complete Round 3 server features.
 
-The first person to sign in seeds the demo brand pack into Firestore. Sign up with different emails and roles to see shared, real-time workflow between users.
+The first account and initial brand-rules document are created in one Firestore transaction, so concurrent sign-ups cannot both claim Admin. The first account becomes Admin; later accounts start as Creators. Admins promote Reviewers from **Brand rules > Team**.
 
 ### What Firebase is used for
 | Service | Used for |
@@ -37,7 +37,7 @@ The first person to sign in seeds the demo brand pack into Firestore. Sign up wi
 | Firestore `brand/rules` | The brand pack (admins write) |
 | Firestore `docs` | Content, versions, comments, audit trail |
 | Firestore `events` | Append-only log that powers Insights |
-| Security rules | Only Reviewer or Admin can approve; only Admin can edit rules; events cannot be changed |
+| Security rules | Direct client approval is blocked; roles constrain workflow writes; only Admin can edit rules; events cannot be changed |
 
 ## Deploy on Vercel (recommended: gives you the server-side Gemini key)
 
@@ -66,17 +66,21 @@ Numeric fact checks understand common qualifiers and formats such as "over 40k",
 
 Gemini findings must cite a real rule ID and quote text from the draft, then pass an independent check that the cited rule actually supports the finding. The displayed confidence combines Gemini's confidence with the rule-support check and their agreement. Unsupported findings are dropped and counted. AI never edits or approves; a person does.
 
-Run the unit and verifier tests with `npm test`.
+Run the unit, verifier, and approval tests with `npm test`.
 For the browser suite, start `npm start` in one terminal and run `node tests/e2e.js` in another.
+For Firestore authorization tests, run `npx --yes firebase-tools@14 emulators:exec --only firestore --project demo-brandguard "npm run test:rules"`.
 
 ## Verification and current limits
 - `npm test` runs deterministic engine/accuracy, Gemini-verifier, and server-approval tests.
 - `node tests/e2e.js` exercises browser flows using an in-memory Firebase mock; it does not replace a live Firebase/Vercel integration test.
-- `npm run check` checks JavaScript syntax. Firestore rules should be deployed and tested against the project's Firebase emulator before a production launch.
+- `npm run test:rules` exercises first-Admin concurrency, role boundaries, document update permissions, and append-only event rules in the Firestore emulator.
+- The rules suite also verifies valid 20,000-character drafts and the 100th-version append, plus comments by owners in Draft and Changes requested states.
+- `npm run check` checks JavaScript syntax. The emulator suite does not replace a staging approval journey against the actual Firebase/Vercel project.
 - Gemini metrics depend on the configured model and network; no live Gemini key is included.
 - Image analysis is a practical dominant-color sample, not logo recognition, OCR-based text detection, or full-image design review. The creator selects the foreground/background pair for contrast evaluation, and the reviewer confirms they inspected the creative.
 - Approval requires `FIREBASE_SERVICE_ACCOUNT_JSON` on the Vercel deployment. If that secret or the `/api/approve` endpoint is unavailable, the document is not approved.
 - Browser demo roles and local data are for evaluation only; production identity and authorization require Firebase configuration.
+- Documents are capped at 20,000 characters, 100 versions, and a conservative Firestore payload size; export the review report and continue in a new document when a document reaches its limit.
 
 ## Completed product features
 - Firebase email/password and Google sign-in; first workspace account becomes Admin, and later accounts start as Creators.

@@ -1,6 +1,7 @@
 /* Server-verifies a submitted version and records an immutable approval fingerprint. */
 const crypto = require('crypto');
 const engine = require('../assets/js/engine.js');
+const MAX_IMAGE_DATA_URL = 220000;
 let firebaseApp;
 
 function respond(res, status, body) { return res.status(status).json(body); }
@@ -40,10 +41,23 @@ function openHigh(findings, disputed) {
   });
 }
 async function dominantColors(dataUrl) {
+  if (typeof dataUrl !== 'string' || dataUrl.length > MAX_IMAGE_DATA_URL) {
+    throw approvalError(409, 'The attached image is too large. Reattach a smaller PNG or JPG.', 'invalid_image');
+  }
   const match = dataUrl.match(/^data:image\/jpeg;base64,([A-Za-z0-9+/=]+)$/);
   if (!match) throw approvalError(409, 'The attached image is not in the expected format. Reattach and resubmit.', 'invalid_image');
   const sharp = require('sharp');
-  const { data } = await sharp(Buffer.from(match[1], 'base64')).flatten({ background: '#ffffff' })
+  const buffer = Buffer.from(match[1], 'base64');
+  if (buffer.length > 165000 || buffer.toString('base64') !== match[1]) {
+    throw approvalError(409, 'The attached image is invalid or too large. Reattach and resubmit.', 'invalid_image');
+  }
+  const image = sharp(buffer, { limitInputPixels: 1280 * 1280, failOn: 'error' });
+  const metadata = await image.metadata();
+  if (metadata.format !== 'jpeg' || !metadata.width || !metadata.height ||
+      metadata.width > 1280 || metadata.height > 1280 || metadata.width * metadata.height > 1280 * 1280) {
+    throw approvalError(409, 'The image dimensions are invalid. Reattach and resubmit.', 'invalid_image');
+  }
+  const { data } = await image.flatten({ background: '#ffffff' })
     .resize(96, 96, { fit: 'fill' }).raw().toBuffer({ resolveWithObject: true });
   const bins = new Map();
   for (let i = 0; i < data.length; i += 12) {

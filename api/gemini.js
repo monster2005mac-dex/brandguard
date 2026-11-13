@@ -8,6 +8,7 @@
 
 const WINDOW_MS = 60 * 1000;
 const MAX_CALLS = 8;
+const MAX_TRACKED_USERS = 10000;
 const hits = new Map(); // uid -> timestamps (per warm instance; good enough for a hackathon, use Redis for scale)
 
 function send(res, status, body) { res.status(status).json(body); }
@@ -68,6 +69,12 @@ module.exports = async function handler(req, res) {
   const now = Date.now();
   const recent = (hits.get(uid) || []).filter((t) => now - t < WINDOW_MS);
   if (recent.length >= MAX_CALLS) return send(res, 429, { error: 'Too many requests. Wait a minute.' });
+  if (!hits.has(uid) && hits.size >= MAX_TRACKED_USERS) {
+    for (const [trackedUid, timestamps] of hits) {
+      if (!timestamps.some((timestamp) => now - timestamp < WINDOW_MS)) hits.delete(trackedUid);
+    }
+    if (hits.size >= MAX_TRACKED_USERS) return send(res, 503, { error: 'AI request capacity is temporarily full. Try again shortly.' });
+  }
   recent.push(now);
   hits.set(uid, recent);
 

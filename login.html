@@ -58,6 +58,12 @@ try{
     (function wait(){
       var role=S.user&&S.user.role;
       if(!role&&tries++<50){setTimeout(wait,100);return;}
+      if(!role){
+        var err=document.getElementById('err'),submit=document.getElementById('go'),google=document.getElementById('g');
+        if(err){err.hidden=false;err.textContent='Authentication succeeded, but the workspace profile did not load. Check your connection and reload before continuing.';}
+        if(submit)submit.disabled=false;if(google)google.disabled=false;
+        return;
+      }
       var email=(S.user&&S.user.email||'').toLowerCase();
       try{sessionStorage.setItem('bg.hop',String(Date.now()));}catch(e){}
       if(role==='Admin'){location.replace('rules.html');return;}
@@ -90,7 +96,7 @@ try{
         (mode==='up'?'<div class="field"><label for="nm">Name</label><input type="text" id="nm" autocomplete="name"></div>':'')+
         '<div class="field"><label for="em">Email</label><input type="email" id="em" autocomplete="email" inputmode="email"></div>'+
         '<div class="field"><label for="pw">Password</label><div class="pw-wrap"><input type="password" id="pw" autocomplete="'+(mode==='in'?'current-password':'new-password')+'"><button class="pw-toggle" type="button" id="pwt" aria-label="Show password">Show</button></div>'+(mode==='in'?'<button class="linkbtn small" type="button" id="forgot">Forgot password?</button>':'')+'</div>'+
-        (mode==='up'?'<div class="note" style="margin-top:2px">New accounts start as Creators. An Admin assigns Reviewer access separately.</div>':'')+
+        (mode==='up'?'<div class="note" style="margin-top:2px">The first account in a new workspace becomes Admin. Later accounts start as Creators; an Admin assigns Reviewer access.</div>':'')+
         '<div id="err" class="note warn" role="alert" hidden></div>'+
         '<button class="btn primary lg" type="submit" id="go">'+(mode==='in'?'Sign in':'Create account')+'</button>'+
         '<button class="btn lg" type="button" id="g">Continue with Google</button>'+
@@ -135,6 +141,12 @@ try{
     if(user){go();return;}
     try{localStorage.removeItem('bg.hint');}catch(e){}
     if(S.mode==='firebase')live();else demo();
+  }).catch(function(error){
+    box.innerHTML=BACK+'<h1 style="font-size:30px;margin-bottom:6px">Workspace unavailable</h1>'+
+      '<p class="note warn" role="alert">'+esc(error&&error.message||'Firebase could not start.')+'</p>'+
+      '<p class="muted">BrandGuard will not switch to a local demo while Firebase is configured. Check the Firebase configuration or connection before signing in.</p>'+
+      '<button class="btn primary" type="button" id="retryFirebase">Try again</button>';
+    document.getElementById('retryFirebase').addEventListener('click',function(){location.reload();});
   });
 })();
 </script>

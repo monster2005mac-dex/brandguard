@@ -97,6 +97,15 @@ async function newCtx(browser, mode) {
     assert.strictEqual(await page.locator('#rl').count(), 0); ok('live: sign-up has no role picker');
     await page.click('#go');
     await page.waitForURL('**/rules.html', { timeout: 8000 }); ok('live: first account lands on Rules as Admin');
+    const bootstrap=await page.evaluate(()=>{
+      const accounts=JSON.parse(localStorage.getItem('fake.accts')||'{}');
+      const account=accounts['asha@acme.test'];
+      const db=JSON.parse(localStorage.getItem('fake.db')||'{}');
+      return {role:db['users/'+account.uid].role,initialAdmin:db['brand/rules'].initialAdmin,uid:account.uid};
+    });
+    assert.strictEqual(bootstrap.role,'Admin');
+    assert.strictEqual(bootstrap.initialAdmin,bootstrap.uid);
+    ok('live: first account and brand workspace are created together with a single initial admin');
     await page.waitForSelector('text=1 finding passed the relevance check'); ok('live: Admin sees Gemini benchmark metrics after its rule-support verification');
     await page.waitForSelector('text=Set up your brand pack');
     assert((await page.textContent('body')).includes('Northwind') === false); ok('live: no fictional Northwind data in a real workspace');
@@ -160,6 +169,23 @@ async function newCtx(browser, mode) {
     assert.deepStrictEqual(errors, [], 'page errors: ' + errors.join('\n')); ok('live: no JS errors');
     await ctx.close();
   }
+
+  /* ---------- C. configured Firebase failure must not become a local demo ---------- */
+  {
+    const ctx=await browser.newContext({viewport:{width:1280,height:900}});
+    await ctx.route('**/assets/js/firebase-config.js',route=>route.fulfill({
+      contentType:'text/javascript',
+      body:'window.BG_CONFIG={firebase:{apiKey:"configured",projectId:"configured-project"}};'
+    }));
+    await ctx.route('**/www.gstatic.com/firebasejs/**',route=>route.abort());
+    const page=await ctx.newPage();
+    await page.goto(BASE+'login.html');
+    await page.waitForSelector('text=Workspace unavailable');
+    assert.strictEqual(await page.locator('[data-role]').count(),0);
+    ok('configured Firebase startup failures never fall back to a misleading local demo');
+    await ctx.close();
+  }
+
   await browser.close();
   console.log(passed + ' passed');
 })().catch(e => { console.error('FAIL', e.message); process.exit(1); });

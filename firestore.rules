@@ -3,23 +3,90 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     function signedIn() { return request.auth != null; }
-    function me() { return get(/databases/$(database)/documents/users/$(request.auth.uid)).data; }
+    function userPath(uid) { return /databases/$(database)/documents/users/$(uid); }
+    function rulesPath() { return /databases/$(database)/documents/brand/rules; }
+    function me() { return get(userPath(request.auth.uid)).data; }
     function role() { return me().role; }
-    function isAdmin() { return signedIn() && role() == 'Admin'; }
-    function isReviewer() { return signedIn() && role() in ['Reviewer', 'Admin']; }
-    function workspaceExists() { return exists(/databases/$(database)/documents/brand/rules); }
+    function isAdmin() { return signedIn() && exists(userPath(request.auth.uid)) && role() == 'Admin'; }
+    function isReviewer() { return signedIn() && exists(userPath(request.auth.uid)) && role() in ['Reviewer', 'Admin']; }
+    function validProfile(data) {
+      return data.keys().hasOnly(['name', 'email', 'role', 'createdAt', 'photo'])
+        && data.keys().hasAll(['name', 'email', 'role', 'createdAt'])
+        && data.name is string && data.name.size() <= 120
+        && data.email is string && data.email.size() <= 254
+        && data.role in ['Creator', 'Reviewer', 'Admin']
+        && data.createdAt is string && data.createdAt.size() <= 40
+        && (!data.keys().hasAny(['photo']) || (data.photo is string && data.photo.size() <= 200000));
+    }
+    function listAppended(field) {
+      return request.resource.data[field] is list
+        && resource.data[field] is list
+        && request.resource.data[field].size() == resource.data[field].size() + 1
+        && request.resource.data[field] == resource.data[field].concat([
+          request.resource.data[field][resource.data[field].size()]
+        ]);
+    }
+    function listUnchangedOrAppended(field) {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny([field])
+        || listAppended(field);
+    }
+    function validDoc(docId) {
+      return request.resource.data.keys().hasOnly([
+          'id', 'title', 'type', 'status', 'versions', 'comments', 'audit',
+          'owner', 'intent', 'image', 'visual', 'approval', 'sample'
+        ])
+        && request.resource.data.keys().hasAll([
+          'id', 'title', 'type', 'status', 'versions', 'comments', 'audit', 'owner'
+        ])
+        && request.resource.data.id == docId
+        && request.resource.data.title is string && request.resource.data.title.size() > 0
+        && request.resource.data.title.size() <= 200
+        && request.resource.data.type is string && request.resource.data.type.size() <= 80
+        && request.resource.data.owner is string
+        && request.resource.data.status in ['Draft', 'In review', 'Changes requested', 'Approved']
+        && request.resource.data.versions is list
+        && request.resource.data.versions.size() > 0
+        && request.resource.data.versions.size() <= 100
+        && request.resource.data.versions[request.resource.data.versions.size() - 1].text is string
+        && request.resource.data.versions[request.resource.data.versions.size() - 1].text.size() <= 20000
+        && request.resource.data.comments is list
+        && request.resource.data.comments.size() <= 500
+        && request.resource.data.audit is list
+        && request.resource.data.audit.size() <= 1000
+        && (!request.resource.data.keys().hasAny(['intent'])
+          || (request.resource.data.intent is string && request.resource.data.intent.size() <= 2000))
+        && (!request.resource.data.keys().hasAny(['image']) || request.resource.data.image == null
+          || (request.resource.data.image.dataUrl is string
+            && request.resource.data.image.dataUrl.size() <= 220000
+            && request.resource.data.image.dataUrl.matches('data:image/jpeg;base64,[A-Za-z0-9+/=]+')));
+    }
+    function appendsVersion() {
+      return request.resource.data.versions is list
+        && resource.data.versions is list
+        && request.resource.data.versions.size() == resource.data.versions.size() + 1
+        && request.resource.data.versions == resource.data.versions.concat([
+          request.resource.data.versions[resource.data.versions.size()]
+        ]);
+    }
+    function appendsCommentAndAudit() {
+      return listAppended('comments') && listAppended('audit');
+    }
+    function appendsVersionAndAudit() {
+      return appendsVersion() && listAppended('audit');
+    }
 
     // ---------- Users ----------
-    // Everyone signed in can read profiles (names for the audit trail).
-    // A new account is a Creator. The very first account, created while no workspace exists yet,
-    // becomes the workspace Admin. After that, ONLY an Admin can change anybody's role.
-    // People can edit their own name and photo, never their own role or email.
     match /users/{uid} {
-      allow read: if signedIn();
-      allow create: if signedIn() && request.auth.uid == uid
-        && (request.resource.data.role == 'Creator'
-          || (request.resource.data.role == 'Admin' && !workspaceExists()));
-      allow update: if signedIn() && (
+      allow read: if signedIn() && (request.auth.uid == uid || isAdmin());
+      // Initial Admin creation must atomically create the brand/rules document and this profile.
+      // Firestore transaction retries serialize competing first sign-ups.
+      allow create: if signedIn() && request.auth.uid == uid && validProfile(request.resource.data)
+        && (
+          (request.resource.data.role == 'Creator' && existsAfter(rulesPath()))
+          || (request.resource.data.role == 'Admin'
+            && getAfter(rulesPath()).data.initialAdmin == uid)
+        );
+      allow update: if signedIn() && validProfile(request.resource.data) && (
         (request.auth.uid == uid
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'photo']))
         || (isAdmin()
@@ -30,63 +97,87 @@ service cloud.firestore {
     }
 
     // ---------- Brand rules ----------
-    // Anyone signed in can read. Only an Admin can create or change the brand pack.
-    // No secrets are stored here: the Gemini key lives on the server (Vercel env var).
     match /brand/{id} {
       allow read: if signedIn();
-      allow create, update: if isAdmin();
-      allow delete: if isAdmin();
+      allow create: if isAdmin() || (signedIn() && id == 'rules'
+        && request.resource.data.initialAdmin == request.auth.uid
+        && getAfter(userPath(request.auth.uid)).data.role == 'Admin');
+      allow update: if isAdmin()
+        && request.resource.data.get('initialAdmin', '') == resource.data.get('initialAdmin', '');
+      // Deleting this singleton would reopen first-Admin registration.
+      allow delete: if false;
     }
 
     // ---------- Documents ----------
-    // A creator reads and writes their own documents. Reviewers and Admins read all.
-    // Reviewers/Admins can request changes. Only the server approval endpoint can set Approved,
-    // and nobody can approve a document they own (separation of duties).
-    // When an owner edits an Approved or Changes-requested document it must go back to Draft.
     match /docs/{docId} {
       allow read: if signedIn() && (resource.data.owner == request.auth.uid || isReviewer());
-      allow create: if signedIn()
-        && request.resource.data.owner == request.auth.uid
-        && request.resource.data.status in ['Draft', 'In review'];
-      allow update: if signedIn()
-        && request.resource.data.status != 'Approved'
+      allow create: if signedIn() && request.resource.data.owner == request.auth.uid
+        && request.resource.data.status in ['Draft', 'In review']
+        && validDoc(docId);
+      allow update: if signedIn() && validDoc(docId)
         && request.resource.data.owner == resource.data.owner
         && (
-          // owner saving or submitting
+          // Owners can save a new version while their document is not under active review.
           (resource.data.owner == request.auth.uid
             && resource.data.status in ['Draft', 'Changes requested', 'Approved']
-            && request.resource.data.status in ['Draft', 'In review'])
-          // A submitted version is immutable to its creator while reviewers inspect it.
-          || (resource.data.owner == request.auth.uid
-            && resource.data.status == 'In review'
-            && request.resource.data.status == 'Draft')
-          // Comments and their audit entry are the only same-status creator edits in review.
+            && request.resource.data.status in ['Draft', 'In review']
+            && (resource.data.status != 'Approved' || request.resource.data.status == 'Draft')
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'title', 'type', 'intent', 'status', 'versions', 'comments', 'audit', 'image', 'visual'
+            ])
+            && appendsVersion()
+            && listUnchangedOrAppended('comments')
+            && listAppended('audit'))
+          // During review, creators may add a comment, but cannot change submitted content.
           || (resource.data.owner == request.auth.uid
             && resource.data.status == 'In review'
             && request.resource.data.status == 'In review'
-            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['comments', 'audit']))
-          // owner re-saving a reviewed document without touching its status is not allowed;
-          // the client must reset it to Draft, which the line above permits.
-          // reviewer / admin decisions on somebody else's document
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['comments', 'audit'])
+            && appendsCommentAndAudit())
+          || (resource.data.owner == request.auth.uid
+            && resource.data.status in ['Draft', 'Changes requested']
+            && request.resource.data.status == resource.data.status
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['comments', 'audit'])
+            && appendsCommentAndAudit())
+          // Reviewers can comment, request changes, or commit a new version; no other fields.
           || (isReviewer() && resource.data.owner != request.auth.uid
-              && resource.data.status == 'In review'
-              && request.resource.data.status in ['Draft', 'In review', 'Changes requested'])
+            && resource.data.status == 'In review'
+            && request.resource.data.status == 'In review'
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['comments', 'audit'])
+            && appendsCommentAndAudit())
+          || (isReviewer() && resource.data.owner != request.auth.uid
+            && resource.data.status == 'In review'
+            && request.resource.data.status == 'In review'
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['versions', 'audit'])
+            && appendsVersionAndAudit())
+          || (isReviewer() && resource.data.owner != request.auth.uid
+            && resource.data.status == 'In review'
+            && request.resource.data.status == 'Changes requested'
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'comments', 'audit'])
+            && appendsCommentAndAudit())
         );
       allow delete: if isAdmin()
-        || (signedIn()
-          && resource.data.owner == request.auth.uid
+        || (signedIn() && resource.data.owner == request.auth.uid
           && resource.data.status in ['Draft', 'Changes requested']);
     }
 
     // ---------- Events ----------
-    // Append-only log that powers Insights. Must look like a real event.
     match /events/{eventId} {
       allow read: if signedIn();
       allow create: if signedIn()
-        && request.resource.data.keys().hasAll(['ruleId', 'outcome', 'at'])
-        && request.resource.data.outcome in ['accepted', 'edited', 'disputed'];
-      allow delete: if isAdmin();
-      allow update: if false;
+        && request.resource.data.keys().hasOnly(['ruleId', 'category', 'outcome', 'at', 'reason', 'by', 'uid'])
+        && request.resource.data.keys().hasAll(['ruleId', 'outcome', 'at', 'uid'])
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.ruleId is string && request.resource.data.ruleId.size() <= 40
+        && request.resource.data.outcome in ['accepted', 'edited', 'disputed']
+        && request.resource.data.at is string && request.resource.data.at.size() <= 40
+        && (!request.resource.data.keys().hasAny(['category'])
+          || (request.resource.data.category is string && request.resource.data.category.size() <= 80))
+        && (!request.resource.data.keys().hasAny(['reason'])
+          || (request.resource.data.reason is string && request.resource.data.reason.size() <= 1000))
+        && (!request.resource.data.keys().hasAny(['by'])
+          || (request.resource.data.by is string && request.resource.data.by.size() <= 120));
+      allow update, delete: if false;
     }
   }
 }

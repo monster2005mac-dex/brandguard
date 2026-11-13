@@ -89,6 +89,7 @@ document.addEventListener('click',function(ev){
   if(a==='editText'&&d){editMode=true;UI.drawer(detail(d));return;}
   if(a==='cancelEdit'&&d){editMode=false;UI.drawer(detail(d));return;}
   if(a==='commitEdit'&&d&&c.approve&&d.owner!==S.user.uid&&d.status==='In review'){
+    if(d.versions.length>=100){UI.toast('This document reached the 100-version limit. Export the review report and continue in a new document.');return;}
     var text=(($('reviewEditText')||{}).value||'').trim();
     if(!text){UI.toast('The text cannot be empty.');return;}
     var old=latest(d).text;

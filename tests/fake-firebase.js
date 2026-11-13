@@ -33,5 +33,19 @@ var auth={
     var u={uid:a.uid,email:a.email,displayName:a.displayName||''};localStorage.setItem(AUTHK,JSON.stringify(u));emitAuth();return Promise.resolve({user:mk(u)});},
   signOut:function(){localStorage.removeItem(AUTHK);emitAuth();return Promise.resolve();}
 };
-window.firebase={initializeApp:function(){},auth:Object.assign(function(){return auth;},{GoogleAuthProvider:function(){}}),firestore:function(){return {collection:colRef,batch:function(){var ops=[];return {set:function(r,v){ops.push([r,v]);},commit:function(){ops.forEach(function(o){o[0].set(o[1]);});return Promise.resolve();}};}};}};
+window.firebase={initializeApp:function(){},auth:Object.assign(function(){return auth;},{GoogleAuthProvider:function(){}}),firestore:function(){return {
+  collection:colRef,
+  runTransaction:function(work){
+    var ops=[],tx={
+      get:function(ref){return ref.get();},
+      set:function(ref,value,options){ops.push([ref,value,options]);}
+    };
+    return Promise.resolve(work(tx)).then(function(result){
+      var d=load();
+      ops.forEach(function(op){d[op[0].path]=(op[2]&&op[2].merge&&d[op[0].path])?Object.assign({},d[op[0].path],op[1]):JSON.parse(JSON.stringify(op[1]));});
+      save(d);notify();return result;
+    });
+  },
+  batch:function(){var ops=[];return {set:function(r,v){ops.push([r,v]);},commit:function(){ops.forEach(function(o){o[0].set(o[1]);});return Promise.resolve();}};}
+};}};
 })();

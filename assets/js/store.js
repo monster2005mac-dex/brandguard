@@ -1,6 +1,6 @@
 /* BrandGuard data store.
    Two interchangeable backends behind one API:
-     local    localStorage, used when no Firebase config is present (and as a fallback if Firebase fails)
+     local    localStorage demo, used when no Firebase config is present
      firebase Firebase Auth + Cloud Firestore (real-time, shared between users)
    Shared data: brand rules, documents, events. Per-person data (the draft in progress) is kept in localStorage. */
 (function(){
@@ -13,7 +13,7 @@ var wantFirebase=!!(fbc.apiKey&&fbc.projectId);
 
 var LS_SHARED='bg.shared.v3',LS_USER='bg.user.v3';
 var HINT='bg.hint';
-var shared=null,subs=[],auth=null,db=null,fbReady=false;
+var shared=E.seedAll(),subs=[],auth=null,db=null;
 var S=BG.store={mode:wantFirebase?'firebase':'local',user:null,note:'',ready:null};
 
 function clearLegacyLocalData(){
@@ -42,8 +42,7 @@ function setHint(){
 function emit(){subs.forEach(function(f){try{f();}catch(e){console.error(e);}});}
 function clean(x){return JSON.parse(JSON.stringify(x));}
 function readLS(k){try{var r=localStorage.getItem(k);return r?JSON.parse(r):null;}catch(e){return null;}}
-var memLS={};
-function writeLS(k,v){var s=JSON.stringify(v);memLS[k]=s;try{localStorage.setItem(k,s);}catch(e){}}
+function writeLS(k,v){var s=JSON.stringify(v);try{localStorage.setItem(k,s);}catch(e){}}
 
 Object.defineProperties(S,{
   rules:{get:function(){return shared.rules;}},
@@ -101,14 +100,14 @@ function initFirebase(){
     .then(function(){return Promise.all([loadScript(base+'firebase-auth-compat.js'),loadScript(base+'firebase-firestore-compat.js')]);})
     .then(function(){
       window.firebase.initializeApp(fbc);
-      auth=window.firebase.auth();db=window.firebase.firestore();fbReady=true;
-      return new Promise(function(res){
+      auth=window.firebase.auth();db=window.firebase.firestore();
+      return new Promise(function(resolve,reject){
         var initial=true;
         auth.onAuthStateChanged(function(u){
           if(initial){
             initial=false;
-            if(u){attach(u).then(function(){res(u);}).catch(function(e){console.error(e);res(null);});}
-            else res(null);
+            if(u){attach(u).then(resolve).catch(reject);}
+            else resolve(null);
             return;
           }
           if(u){attach(u).catch(function(e){console.error(e);});}
@@ -118,23 +117,32 @@ function initFirebase(){
     })
     .catch(function(e){
       console.error(e);
-      S.mode='local';S.note='Firebase could not start ('+(e&&e.message||e)+'). Running in local demo mode.';
-      return initLocal();
+      S.note='Firebase could not start ('+(e&&e.message||e)+'). Reload the page or check the Firebase configuration and connection.';
+      S.user=null;
+      setHint();
+      emit();
+      throw e;
     });
 }
 function attach(u){
   var uref=db.collection('users').doc(u.uid);
-  return uref.get().then(function(snap){
-    var d=snap.exists?snap.data():null;
-    if(d)return d;
-    /* New account. The very first one (no workspace yet) becomes Admin; everyone else is a Creator.
-       The security rules enforce this, so it cannot be faked from the browser. */
-    var pendingName=null;try{pendingName=sessionStorage.getItem('bg.pendingName');sessionStorage.removeItem('bg.pendingName');sessionStorage.removeItem('bg.pendingRole');}catch(e){}
-    var rec={name:pendingName||u.displayName||(u.email||'').split('@')[0]||'User',email:u.email||'',createdAt:new Date().toISOString()};
-    return db.collection('brand').doc('rules').get().then(function(r){
-      rec.role=!r.exists?'Admin':'Creator';
-      return uref.set(rec).catch(function(){rec.role='Creator';return uref.set(rec);});
-    }).then(function(){return rec;});
+  var rulesRef=db.collection('brand').doc('rules'),pendingName=null;
+  try{pendingName=sessionStorage.getItem('bg.pendingName');sessionStorage.removeItem('bg.pendingName');sessionStorage.removeItem('bg.pendingRole');}catch(e){}
+  return db.runTransaction(function(tx){
+    return Promise.all([tx.get(uref),tx.get(rulesRef)]).then(function(snaps){
+      var userSnap=snaps[0],rulesSnap=snaps[1];
+      if(userSnap.exists)return userSnap.data();
+      var rec={name:pendingName||u.displayName||(u.email||'').split('@')[0]||'User',email:u.email||'',createdAt:new Date().toISOString()};
+      if(rulesSnap.exists)rec.role='Creator';
+      else{
+        rec.role='Admin';
+        var initialRules=E.templateRules(rec.name?rec.name+"'s company":'');
+        initialRules.initialAdmin=u.uid;
+        tx.set(rulesRef,clean(initialRules));
+      }
+      tx.set(uref,rec);
+      return rec;
+    });
   }).then(function(d){
     S.user={uid:u.uid,name:d.name||u.displayName||'User',email:u.email||d.email||'',role:d.role||'Creator',photo:d.photo||u.photoURL||''};setHint();
   }).then(function(){return bootstrap();}).then(listen).then(function(){return S.user;});
@@ -144,7 +152,9 @@ function bootstrap(){
   var ref=db.collection('brand').doc('rules');
   return ref.get().then(function(s){
     if(s.exists)return null;
-    return ref.set(clean(E.templateRules(S.user.name?S.user.name+"'s company":'')));
+    var rules=E.templateRules(S.user.name?S.user.name+"'s company":'');
+    rules.initialAdmin=S.user.uid;
+    return ref.set(clean(rules));
   });
 }
 function listen(){
@@ -184,11 +194,6 @@ function listen(){
       shared.events=snap.docs.map(function(d){return d.data();})
         .filter(function(e){return !e.sample;})
         .sort(function(a,b){return a.at<b.at?-1:1;});
-      if(S.user.role==='Admin')snap.docs.forEach(function(eventSnap){
-        if(eventSnap.data().sample){
-          db.collection('events').doc(eventSnap.id).delete().catch(function(e){console.error(e);});
-        }
-      });
       once('e');emit();
     },fail('e'));
     db.collection('users').doc(S.user.uid).onSnapshot(function(snap){
@@ -212,12 +217,19 @@ S.init=function(){
 };
 S.saveRules=function(r){
   delete r.gemini;
+  if(shared.rules.initialAdmin)r.initialAdmin=shared.rules.initialAdmin;
+  var previous=clean(shared.rules);
   shared.rules=r;emit();
-  if(S.mode==='firebase')return db.collection('brand').doc('rules').set(clean(r)).catch(S._err);
+  if(S.mode==='firebase')return db.collection('brand').doc('rules').set(clean(r)).catch(function(e){
+    shared.rules=previous;emit();return S._err(e);
+  });
   persistLocal();return Promise.resolve();
 };
 S.saveDoc=function(d){
   if(S.mode==='firebase'&&S.user)d.owner=d.owner||S.user.uid;
+  if(S.mode==='firebase'&&new Blob([JSON.stringify(d)]).size>850000){
+    return Promise.reject(new Error('This document is too large to save safely in Firestore. Export the review report and continue in a new document.'));
+  }
   var i=shared.docs.findIndex(function(x){return x.id===d.id;});
   var previous=i>=0?JSON.parse(JSON.stringify(shared.docs[i])):null;
   if(i>=0)shared.docs[i]=d;else shared.docs.push(d);
@@ -260,7 +272,9 @@ S.deleteDoc=function(id){
 };
 S.addEvent=function(e){
   shared.events.push(e);emit();
-  if(S.mode==='firebase')return db.collection('events').add(clean(e)).catch(S._err);
+  if(S.mode==='firebase')return db.collection('events').add(clean(e)).catch(function(error){
+    shared.events=shared.events.filter(function(item){return item!==e;});emit();return S._err(error);
+  });
   persistLocal();return Promise.resolve();
 };
 S.removeSampleEvents=function(ruleId){
@@ -325,10 +339,12 @@ S.setPhoto=function(url){
   if(!S.user)return Promise.resolve();
   var u=S.user;
   if(S.mode==='firebase'){
-    var cur=auth&&auth.currentUser;
+    var cur=auth&&auth.currentUser,previous=u.photo;
     u.photo=url||(cur&&cur.photoURL)||'';
     setHint();emit();
-    return db.collection('users').doc(u.uid).set({photo:url||''},{merge:true}).catch(S._err);
+    return db.collection('users').doc(u.uid).set({photo:url||''},{merge:true}).catch(function(e){
+      u.photo=previous;setHint();emit();return S._err(e);
+    });
   }
   u.photo=url||'';writeLS(LS_USER,u);setHint();emit();return Promise.resolve();
 };
