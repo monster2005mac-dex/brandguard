@@ -76,7 +76,7 @@ try{
         return '<button class="role-card" data-role="'+r[0]+'" aria-label="Open Demo '+r[0]+'"><span class="ico"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-6 8-6s8 2 8 6"/></svg></span><b>Demo '+r[0]+'</b><span>'+r[1]+'</span><span class="go">&rarr;</span></button>';}).join('')+'</div>'+
         '<button class="btn sm ghost" id="resetDemo" type="button" style="margin-top:12px">Reset all demo accounts</button>'+
         '<p class="small muted" style="margin-top:18px">Demo data is local to this browser. It never uses real accounts, Firebase workspace data, or server approval.</p>'+
-        '<button class="linkbtn small" id="liveLogin" type="button" style="margin-top:8px">Sign in to a workspace</button>';
+        '<button class="btn primary" id="liveLogin" type="button" style="margin-top:12px">Sign in to an existing account</button>';
     box.querySelectorAll('[data-role]').forEach(function(b){b.addEventListener('click',function(){S.enterLocal('Demo '+b.dataset.role,b.dataset.role).then(go);});});
     document.getElementById('liveLogin').addEventListener('click',function(){
       try{sessionStorage.removeItem('bg.demoMode');}catch(e){}
@@ -163,11 +163,22 @@ try{
     });
     return;
   }
+  var sessionCheckDone=false;
+  var sessionCheckTimer=setTimeout(function(){
+    if(sessionCheckDone)return;
+    box.innerHTML=BACK+'<h1 style="font-size:30px;margin-bottom:6px">Sign-in check timed out</h1>'+
+      '<p class="note warn" role="alert">Firebase did not finish checking your session. Check your connection, then retry. You will not be switched to a demo account automatically.</p>'+
+      '<button class="btn primary" type="button" id="retrySession">Retry Firebase sign-in</button>'+
+      '<a class="btn" href="login.html?demo=1" style="margin-top:10px">Explore the local demo instead</a>';
+    document.getElementById('retrySession').addEventListener('click',function(){location.reload();});
+  },15000);
   S.init().then(function(user){
+    sessionCheckDone=true;clearTimeout(sessionCheckTimer);
     if(user){go();return;}
     try{localStorage.removeItem('bg.hint');}catch(e){}
     if(S.mode==='firebase')live();else demo();
   }).catch(function(error){
+    sessionCheckDone=true;clearTimeout(sessionCheckTimer);
     if(error&&['invite_required','verified_email_required','invitation_email_mismatch','invitation_expired','invitation_not_found','already_member','invalid_invitation','invalid_membership','profile_load_timeout','workspace_not_initialized'].indexOf(error.code)>=0||
       error&&/permission-denied|unavailable|network-request-failed/.test(error.code||'')){
       live();

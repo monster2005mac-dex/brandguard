@@ -441,6 +441,19 @@ S.google=function(){
   S.authError=null;
   return auth.signInWithPopup(new window.firebase.auth.GoogleAuthProvider());
 };
+S.hasGoogleProvider=function(){
+  var current=auth&&auth.currentUser;
+  return !!(S.mode==='firebase'&&current&&current.providerData&&current.providerData.some(function(p){return p.providerId==='google.com';}));
+};
+S.linkGoogle=function(){
+  if(S.mode!=='firebase'||!auth||!auth.currentUser)return Promise.reject(new Error('Sign in to your Firebase account before linking Google.'));
+  if(S.hasGoogleProvider())return Promise.reject({code:'auth/provider-already-linked',message:'Google sign-in is already linked to this account.'});
+  var current=auth.currentUser;
+  return current.linkWithPopup(new window.firebase.auth.GoogleAuthProvider()).then(function(result){
+    if(!result.user||result.user.uid!==current.uid)throw new Error('Google sign-in was not linked to the current Firebase account.');
+    return result;
+  });
+};
 S.signOut=function(){
   try{localStorage.removeItem(HINT);}catch(e){}
   var uid=S.user&&S.user.uid;

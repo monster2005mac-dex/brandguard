@@ -22,7 +22,7 @@ function colRef(name,filters){filters=filters||[];
    onSnapshot:function(cb){var f=function(){cb({docs:docs()});};listeners.push(f);setTimeout(f,0);return function(){};}};}
 var authCbs=[];
 function curUser(){try{return JSON.parse(localStorage.getItem(AUTHK));}catch(e){return null;}}
-function mk(u){return u&&Object.assign({},u,{getIdToken:function(){return Promise.resolve('tok-'+u.uid);},updateProfile:function(p){var c=curUser();c.displayName=p.displayName;localStorage.setItem(AUTHK,JSON.stringify(c));var reg=JSON.parse(localStorage.getItem('fake.accts')||'{}');if(reg[c.email])reg[c.email].displayName=p.displayName;localStorage.setItem('fake.accts',JSON.stringify(reg));return Promise.resolve();},sendEmailVerification:function(){var c=curUser();c.emailVerified=true;localStorage.setItem(AUTHK,JSON.stringify(c));var reg=JSON.parse(localStorage.getItem('fake.accts')||'{}');if(reg[c.email])reg[c.email].emailVerified=true;localStorage.setItem('fake.accts',JSON.stringify(reg));return Promise.resolve();}});}
+function mk(u){return u&&Object.assign({},u,{providerData:u.providerData||[{providerId:'password',email:u.email}],getIdToken:function(){return Promise.resolve('tok-'+u.uid);},updateProfile:function(p){var c=curUser();c.displayName=p.displayName;localStorage.setItem(AUTHK,JSON.stringify(c));var reg=JSON.parse(localStorage.getItem('fake.accts')||'{}');if(reg[c.email])reg[c.email].displayName=p.displayName;localStorage.setItem('fake.accts',JSON.stringify(reg));return Promise.resolve();},sendEmailVerification:function(){var c=curUser();c.emailVerified=true;localStorage.setItem(AUTHK,JSON.stringify(c));var reg=JSON.parse(localStorage.getItem('fake.accts')||'{}');if(reg[c.email])reg[c.email].emailVerified=true;localStorage.setItem('fake.accts',JSON.stringify(reg));return Promise.resolve();},linkWithPopup:function(provider){var c=curUser();c.providerData=c.providerData||[{providerId:'password',email:c.email}];if(c.providerData.some(function(p){return p.providerId==='google.com';}))return Promise.reject({code:'auth/provider-already-linked'});c.providerData.push({providerId:provider.providerId,email:c.email});localStorage.setItem(AUTHK,JSON.stringify(c));var reg=JSON.parse(localStorage.getItem('fake.accts')||'{}');if(reg[c.email]){reg[c.email].providerData=c.providerData;localStorage.setItem('fake.accts',JSON.stringify(reg));}return Promise.resolve({user:mk(c)});}});}
 function emitAuth(){var u=mk(curUser());authCbs.forEach(function(f){f(u);});}
 var auth={
   get currentUser(){return mk(curUser());},
@@ -30,10 +30,10 @@ var auth={
   createUserWithEmailAndPassword:function(email,pw){var reg=JSON.parse(localStorage.getItem('fake.accts')||'{}');if(reg[email])return Promise.reject({code:'auth/email-already-in-use'});
     var u={uid:'u'+(Object.keys(reg).length+1),email:email,displayName:'',emailVerified:false};reg[email]=Object.assign({pw:pw},u);localStorage.setItem('fake.accts',JSON.stringify(reg));localStorage.setItem(AUTHK,JSON.stringify(u));emitAuth();return Promise.resolve({user:mk(u)});},
   signInWithEmailAndPassword:function(email,pw){var reg=JSON.parse(localStorage.getItem('fake.accts')||'{}');var a=reg[email];if(!a||a.pw!==pw)return Promise.reject({code:'auth/invalid-credential'});
-    var u={uid:a.uid,email:a.email,displayName:a.displayName||'',emailVerified:a.emailVerified===true};localStorage.setItem(AUTHK,JSON.stringify(u));emitAuth();return Promise.resolve({user:mk(u)});},
+    var u={uid:a.uid,email:a.email,displayName:a.displayName||'',emailVerified:a.emailVerified===true,providerData:a.providerData||[{providerId:'password',email:a.email}]};localStorage.setItem(AUTHK,JSON.stringify(u));emitAuth();return Promise.resolve({user:mk(u)});},
   signOut:function(){localStorage.removeItem(AUTHK);emitAuth();return Promise.resolve();}
 };
-window.firebase={initializeApp:function(){},auth:Object.assign(function(){return auth;},{GoogleAuthProvider:function(){}}),firestore:function(){return {
+window.firebase={initializeApp:function(){},auth:Object.assign(function(){return auth;},{GoogleAuthProvider:function(){this.providerId='google.com';}}),firestore:function(){return {
   collection:colRef,
   runTransaction:function(work){
     var ops=[],tx={

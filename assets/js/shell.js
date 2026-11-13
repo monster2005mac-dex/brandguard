@@ -79,10 +79,24 @@ function topProfileHTML(u){
   return (u.photo?'<img class="top-profile-avatar" src="'+esc(u.photo)+'" alt="">':'<span class="top-profile-avatar">'+esc((u.name||'?').charAt(0).toUpperCase())+'</span>')+'<span><b>'+esc(u.name||'User')+'</b><small>'+esc(u.role||'')+'</small></span>';
 }
 function profileHTML(u){
+  var googleLink=BG.store.mode!=='firebase'?'':BG.store.hasGoogleProvider()
+    ?'<div class="note ok" role="status">Google sign-in is linked to this Firebase account.</div>'
+    :'<div class="note" role="status"><p>Link Google sign-in to this account to keep using the same workspace membership.</p><button class="btn sm" data-ui="linkGoogle" type="button">Link Google sign-in</button></div>';
   return '<div class="profile-panel"><div class="profile-heading">'+(u.photo?'<img class="profile-large" src="'+esc(u.photo)+'" alt="">':'<div class="avatar profile-large">'+esc((u.name||'?').charAt(0).toUpperCase())+'</div>')+'<div><span class="eyebrow">Signed-in account</span><h2>'+esc(u.name||'User')+'</h2><p class="muted">'+esc(u.email||'')+'</p></div></div>'+
     '<div class="profile-grid"><div><span>Role</span><b>'+esc(u.role||'')+'</b></div><div><span>Workspace</span><b>BrandGuard</b></div></div>'+
+    googleLink+
     '<div class="photo-actions"><label class="btn sm" for="photoIn">Change photo</label><input type="file" id="photoIn" accept="image/*" class="sr"><button class="btn sm ghost" data-ui="resetPhoto" type="button">Reset photo</button></div>'+
     '<button class="btn" data-ui="theme">Change theme</button><a class="btn" href="index.html">Back to website</a><button class="btn danger" data-ui="signout">Sign out</button></div>';
+}
+function googleLinkError(error){
+  var code=error&&error.code||'';
+  if(code==='auth/credential-already-in-use'||code==='auth/email-already-in-use')return 'This Google account is already linked to another Firebase account. Linking cannot merge accounts; ask an Admin to resolve the existing account.';
+  if(code==='auth/provider-already-linked')return 'Google sign-in is already linked to this account.';
+  if(code==='auth/requires-recent-login')return 'Sign out, sign back in to this account with email and password, then link Google again.';
+  if(code==='auth/popup-blocked')return 'Allow pop-ups for this site, then try linking Google again.';
+  if(code==='auth/popup-closed-by-user'||code==='auth/cancelled-popup-request')return 'The Google sign-in window was closed before linking finished.';
+  if(code==='auth/unauthorized-domain')return 'Add this site to Firebase Authentication’s authorized domains, then try again.';
+  return error&&error.message||'Google sign-in could not be linked. Try again.';
 }
 function resizePhoto(file,cb){
   if(!file||!/^image\//.test(file.type)){cb(null);return;}
@@ -175,6 +189,14 @@ BG.shell={
           if(a==='closeModal')UI.closeModal();
           if(a==='profile'){
             UI.drawer(profileHTML(BG.store.user));
+          }
+          if(a==='linkGoogle'){
+            el.disabled=true;
+            BG.store.linkGoogle().then(function(){
+              UI.drawer(profileHTML(BG.store.user));UI.toast('Google sign-in linked to this Firebase account.');
+            }).catch(function(error){
+              UI.drawer(profileHTML(BG.store.user));UI.toast(googleLinkError(error));
+            });
           }
           return;
         }

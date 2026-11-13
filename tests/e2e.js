@@ -182,6 +182,17 @@ async function newCtx(browser, mode) {
     await page.waitForSelector('text=Set up your brand pack');
     assert.strictEqual(await page.locator('[aria-label="First-run setup steps"]').count(), 1);
     ok('live: first Admin receives a three-step setup guide');
+    await page.click('#usercard [data-ui="profile"]');
+    await page.click('[data-ui="linkGoogle"]');
+    await page.waitForSelector('text=Google sign-in is linked to this Firebase account.');
+    const linkedGoogle=await page.evaluate(()=>({
+      uid:BG.store.user.uid,
+      auth:JSON.parse(localStorage.getItem('fake.auth')||'null')
+    }));
+    assert.strictEqual(linkedGoogle.uid,'u1');
+    assert(linkedGoogle.auth.providerData.some(provider=>provider.providerId==='google.com'));
+    ok('live: Google sign-in links to the existing Admin UID without changing membership');
+    await page.click('[data-ui="close"]');
     assert((await page.textContent('body')).includes('Northwind') === false); ok('live: no fictional Northwind data in a real workspace');
     assert.strictEqual(await page.locator('text=Server AI connected').count(), 1); ok('live: server AI detected');
     // import guidelines via mocked AI
@@ -290,6 +301,27 @@ async function newCtx(browser, mode) {
     assert.strictEqual(demoState.mode, 'local');
     assert.strictEqual(demoState.fakeAuth, null);
     ok('public demo entry works without Firebase credentials and stays isolated in local storage');
+    await ctx.close();
+  }
+
+  /* ---------- D. a stalled Firebase session check gives a retry instead of spinning forever ---------- */
+  {
+    const ctx=await browser.newContext({viewport:{width:1280,height:900}});
+    await ctx.route('**/assets/js/firebase-config.js',route=>route.fulfill({
+      contentType:'text/javascript',
+      body:'window.BG_CONFIG={firebase:{apiKey:"configured",projectId:"configured-project"}};'
+    }));
+    await ctx.route('**/www.gstatic.com/firebasejs/**',route=>{
+      if(route.request().url().endsWith('firebase-app-compat.js')){
+        return route.fulfill({contentType:'text/javascript',body:'window.firebase={initializeApp:function(){},auth:function(){return {onAuthStateChanged:function(){}};},firestore:function(){return {};}};'});
+      }
+      return route.fulfill({contentType:'text/javascript',body:''});
+    });
+    const page=await ctx.newPage();
+    await page.goto(BASE+'login.html');
+    await page.waitForSelector('text=Sign-in check timed out',{timeout:20000});
+    assert.strictEqual(await page.locator('#retrySession').count(),1);
+    ok('a stalled Firebase session check shows a retry instead of an endless spinner');
     await ctx.close();
   }
 
