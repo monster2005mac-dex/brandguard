@@ -17,7 +17,7 @@ var wantFirebase=!!(fbc.apiKey&&fbc.projectId)&&!explicitDemo;
 var LS_SHARED='bg.shared.v3',LS_USER='bg.user.v3';
 var HINT='bg.hint';
 var shared=E.seedAll(),subs=[],auth=null,db=null,persistedRules=null,creatingAccount=false;
-var S=BG.store={mode:wantFirebase?'firebase':'local',user:null,workspaceId:'',note:'',ready:null};
+var S=BG.store={mode:wantFirebase?'firebase':'local',user:null,workspaceId:'',note:'',ready:null,authReady:false,authError:null};
 
 function clearLegacyLocalData(){
   var CLEANUP='bg.production-clean.v1';
@@ -53,7 +53,28 @@ Object.defineProperties(S,{
   events:{get:function(){return shared.events;}},
   users:{get:function(){return shared.users||[];}}
 });
-S.subscribe=function(fn){subs.push(fn);};
+S.subscribe=function(fn){subs.push(fn);return function(){var index=subs.indexOf(fn);if(index>=0)subs.splice(index,1);};};
+S.waitForUser=function(uid){
+  return new Promise(function(resolve,reject){
+    var unsubscribe,settled=false;
+    var timer=setTimeout(function(){
+      var timeout=new Error('Firebase signed you in, but workspace membership did not finish loading. Check the user profile and workspace Firestore access, then try again.');
+      timeout.code='profile_load_timeout';
+      finish(timeout);
+    },15000);
+    function finish(error,user){
+      if(settled)return;
+      settled=true;clearTimeout(timer);if(unsubscribe)unsubscribe();
+      if(error)reject(error);else resolve(user);
+    }
+    function check(){
+      if(S.authReady&&S.user&&(!uid||S.user.uid===uid)){finish(null,S.user);return;}
+      if(S.authError&&(!uid||S.authError.uid===uid))finish(S.authError.error);
+    }
+    unsubscribe=S.subscribe(check);
+    check();
+  });
+};
 S.visibleDocs=function(){
   if(!S.user)return [];
   var role=S.user.role;
@@ -80,6 +101,7 @@ function initLocal(){
   shared.events=(shared.events||[]).filter(function(e){return !e.sample;});
   persistLocal();
   S.user=readLS(LS_USER);
+  S.authReady=!!S.user;
   if(S.user){S.user.uid=localUid(S.user.role);writeLS(LS_USER,S.user);}
   shared.docs.forEach(function(d){if(d.owner==='local')d.owner=localUid('Creator');});
   persistLocal();
@@ -111,12 +133,20 @@ function initFirebase(){
         auth.onAuthStateChanged(function(u){
           if(initial){
             initial=false;
-            if(u){if(creatingAccount)return;attach(u).then(resolve).catch(reject);}
+            if(u){if(creatingAccount)return;attach(u).then(resolve).catch(function(error){
+              S.authError={uid:u.uid,error:error};emit();reject(error);
+            });}
             else resolve(null);
             return;
           }
-          if(u){if(!creatingAccount)attach(u).catch(function(e){console.error(e);});}
-          else {S.user=null;setHint();emit();}
+          if(u){
+            if(creatingAccount)return;
+            S.authReady=false;S.authError=null;
+            attach(u).catch(function(error){
+              S.authError={uid:u.uid,error:error};emit();console.error(error);
+            });
+          }
+          else {S.authReady=false;S.user=null;S.workspaceId='';setHint();emit();}
         });
       });
     })
@@ -130,6 +160,7 @@ function initFirebase(){
     });
 }
 function attach(u){
+  S.authReady=false;S.authError=null;
   var uref=db.collection('users').doc(u.uid),pendingName='',inviteToken='';
   try{
     pendingName=sessionStorage.getItem('bg.pendingName')||'';
@@ -156,15 +187,24 @@ function attach(u){
     }
     S.workspaceId=d.workspaceId;
     S.user={uid:u.uid,name:d.name||u.displayName||'User',email:u.email||d.email||'',role:d.role,photo:d.photo||u.photoURL||'',workspaceId:d.workspaceId};setHint();
-  }).then(function(){return bootstrap();}).then(listen).then(function(){return S.user;}).catch(function(error){
-    if(!S.user&&auth&&auth.currentUser)auth.signOut().catch(function(signOutError){console.error(signOutError);});
+  }).then(function(){return bootstrap();}).then(listen).then(function(){
+    S.authReady=true;S.authError=null;emit();return S.user;
+  }).catch(function(error){
+    S.user=null;S.workspaceId='';S.authReady=false;setHint();emit();
+    if(auth&&auth.currentUser&&auth.currentUser.uid===u.uid){
+      return auth.signOut().catch(function(signOutError){console.error(signOutError);}).then(function(){throw error;});
+    }
     throw error;
   });
 }
 function bootstrap(){
   if(!S.user)return null;
   return db.collection('brandRules').doc(S.user.workspaceId).get().then(function(s){
-    if(!s.exists)throw new Error('Workspace brand rules are missing. Run the documented workspace migration or bootstrap command.');
+    if(!s.exists){
+      var missing=new Error('Workspace brand rules are missing. Run the documented workspace migration or bootstrap command.');
+      missing.code='workspace_not_initialized';
+      throw missing;
+    }
   });
 }
 function listen(){
@@ -319,7 +359,7 @@ S.resetDemo=function(){
 
 /* ---------- auth ---------- */
 S.enterLocal=function(name,role){
-  S.user={uid:localUid(role),name:name||role,email:'',role:role,photo:''};writeLS(LS_USER,S.user);setHint();return Promise.resolve(S.user);
+  S.user={uid:localUid(role),name:name||role,email:'',role:role,photo:''};S.authReady=true;writeLS(LS_USER,S.user);setHint();return Promise.resolve(S.user);
 };
 S.setRole=function(role){
   if(!S.user)return Promise.resolve();
@@ -340,7 +380,7 @@ S.setUserRole=function(uid,role){
   }
   return db.collection('users').doc(uid).update({role:role}).catch(S._err);
 };
-S.signIn=function(email,pw){return auth.signInWithEmailAndPassword(email,pw);};
+S.signIn=function(email,pw){S.authError=null;return auth.signInWithEmailAndPassword(email,pw);};
 S.signUp=function(email,pw,name,role,returnUrl){
   var invite='';
   try{invite=sessionStorage.getItem('bg.inviteToken')||'';}catch(e){}
@@ -365,12 +405,13 @@ S.signUp=function(email,pw,name,role,returnUrl){
   });
 };
 S.google=function(){
+  S.authError=null;
   return auth.signInWithPopup(new window.firebase.auth.GoogleAuthProvider());
 };
 S.signOut=function(){
   try{localStorage.removeItem(HINT);}catch(e){}
   var uid=S.user&&S.user.uid;
-  S.user=null;
+  S.user=null;S.authReady=false;S.authError=null;
   try{if(uid)localStorage.removeItem('bg.session.v3.'+uid);}catch(e){}
   try{sessionStorage.removeItem('bg.selDoc');sessionStorage.removeItem('bg.openDoc');}catch(e){}
   if(S.mode==='firebase'&&auth)return auth.signOut();

@@ -61,21 +61,11 @@ try{
   }catch(e){inviteToken='';}
   var ROLES=[['Creator','Writes content, resolves findings, submits for approval.'],['Reviewer','Approves or requests changes. Cannot edit drafts.'],['Admin','Edits brand rules and workspace access. Full access.']];
   function go(){
-    var tries=0;
-    (function wait(){
-      var role=S.user&&S.user.role;
-      if(!role&&tries++<50){setTimeout(wait,100);return;}
-      if(!role){
-        var err=document.getElementById('err'),submit=document.getElementById('go'),google=document.getElementById('g');
-        if(err){err.hidden=false;err.textContent='Authentication succeeded, but the workspace profile did not load. Check your connection and reload before continuing.';}
-        if(submit)submit.disabled=false;if(google)google.disabled=false;
-        return;
-      }
-      var email=(S.user&&S.user.email||'').toLowerCase();
-      try{sessionStorage.setItem('bg.hop',String(Date.now()));}catch(e){}
-      if(role==='Admin'){location.replace('rules.html');return;}
-      location.replace('workflow.html');
-    })();
+    var role=S.user&&S.user.role;
+    if(!S.authReady||!role)return;
+    try{sessionStorage.setItem('bg.hop',String(Date.now()));}catch(e){}
+    if(role==='Admin'){location.replace('rules.html');return;}
+    location.replace('workflow.html');
   }
   var BACK='<a class="back-link" href="index.html">&larr; Back to website</a>';
   function demo(){
@@ -140,17 +130,22 @@ try{
           mode='in';live();show('Account created. Check your email and verify the address, then sign in here to accept the workspace invitation.',true);
         }).catch(fail);
       }
-      else S.signIn(em,pw).then(go).catch(fail);
+      else S.signIn(em,pw).then(function(cred){return S.waitForUser(cred.user.uid);}).then(go).catch(fail);
     });
-    gBtn.addEventListener('click',function(){err.hidden=true;busy(true,'Opening Google\u2026');S.google().then(go).catch(fail);});
+    gBtn.addEventListener('click',function(){err.hidden=true;busy(true,'Opening Google\u2026');S.google().then(function(cred){return S.waitForUser(cred.user.uid);}).then(go).catch(fail);});
   }
   function friendly(e){
     var c=e&&e.code||'';
-    if(c==='invite_required')return 'Workspace access is invitation-only. Open a valid invitation link to create an account.';
+    if(c==='invite_required')return 'Your Firebase account is valid, but it is not linked to a BrandGuard workspace. Ask a workspace Admin for an invitation and use its link to join. Public sign-up is disabled.';
     if(c==='verified_email_required')return 'Verify the invited email address using the link we sent, then sign in again.';
     if(c==='invitation_email_mismatch')return 'Sign in with the email address this invitation was sent to.';
     if(c==='invitation_expired'||c==='invitation_not_found')return 'This invitation has expired or was already used. Ask an Admin for a new link.';
     if(c==='already_member')return 'This account already belongs to a workspace.';
+    if(c==='invalid_membership')return 'Your Firebase account has a workspace profile, but its role or workspace ID is invalid. Ask the workspace Admin to check users/{uid} and make sure its workspaceId matches an existing ws-… workspace.';
+    if(c==='profile_load_timeout')return 'Firebase signed you in, but workspace membership did not finish loading. Check Firestore access and your users/{uid} profile, then try again.';
+    if(/permission-denied/.test(c))return 'Firebase signed you in, but Firestore denied workspace access. Check that users/{uid} exists, its workspaceId is correct, and the matching workspace and brandRules documents exist.';
+    if(/unavailable|network-request-failed/.test(c))return 'Could not reach Firebase Firestore to load your workspace. Check your connection and try again.';
+    if(c==='workspace_not_initialized')return 'Your workspace profile exists, but its brandRules document is missing. Ask the workspace Admin to finish workspace setup.';
     return /wrong-password|invalid-credential|user-not-found/.test(c)?'Email or password is not right.':
       /email-already/.test(c)?'That email already has an account. Use Sign in.':
       /weak-password/.test(c)?'Use a password with at least 6 characters.':
@@ -174,7 +169,8 @@ try{
     try{localStorage.removeItem('bg.hint');}catch(e){}
     if(S.mode==='firebase')live();else demo();
   }).catch(function(error){
-    if(error&&['invite_required','verified_email_required','invitation_email_mismatch','invitation_expired','invitation_not_found','already_member','invalid_invitation'].indexOf(error.code)>=0){
+    if(error&&['invite_required','verified_email_required','invitation_email_mismatch','invitation_expired','invitation_not_found','already_member','invalid_invitation','invalid_membership','profile_load_timeout','workspace_not_initialized'].indexOf(error.code)>=0||
+      error&&/permission-denied|unavailable|network-request-failed/.test(error.code||'')){
       live();
       var notice=document.getElementById('err');
       if(notice){notice.hidden=false;notice.textContent=friendly(error);}

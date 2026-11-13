@@ -135,10 +135,23 @@ async function newCtx(browser, mode) {
         'users/u1': { name: 'Asha Admin', email: 'asha@acme.test', role: 'Admin', workspaceId, createdAt: new Date().toISOString() }
       }));
       localStorage.setItem('fake.accts', JSON.stringify({
-        'asha@acme.test': { uid: 'u1', email: 'asha@acme.test', displayName: 'Asha Admin', emailVerified: true, pw: 'secret12' }
+        'asha@acme.test': { uid: 'u1', email: 'asha@acme.test', displayName: 'Asha Admin', emailVerified: true, pw: 'secret12' },
+        'unlinked@acme.test': { uid: 'u-unlinked', email: 'unlinked@acme.test', displayName: 'Unlinked User', emailVerified: true, pw: 'secret12' }
       }));
     });
     assert.strictEqual(await page.locator('[data-m="up"]').count(), 0); ok('live: open self-registration is hidden');
+    await page.fill('#em', 'unlinked@acme.test'); await page.fill('#pw', 'secret12'); await page.click('#go');
+    await page.waitForFunction(() => {
+      const error = document.querySelector('#err');
+      return error && !error.hidden && error.textContent.includes('not linked to a BrandGuard workspace');
+    });
+    assert.strictEqual(await page.locator('#go').isDisabled(), false);
+    ok('live: authenticated accounts without workspace membership get actionable invitation guidance');
+    await page.evaluate(() => {
+      const accounts = JSON.parse(localStorage.getItem('fake.accts') || '{}');
+      delete accounts['unlinked@acme.test'];
+      localStorage.setItem('fake.accts', JSON.stringify(accounts));
+    });
     await page.fill('#em', 'asha@acme.test'); await page.fill('#pw', 'secret12');
     await page.click('#go');
     await page.waitForURL('**/rules.html', { timeout: 8000 }); ok('live: provisioned workspace Admin lands on Rules');

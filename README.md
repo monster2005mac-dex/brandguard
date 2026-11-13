@@ -42,6 +42,8 @@ npm run bootstrap:admin
 
 The script creates `workspaces/{workspaceId}`, `brandRules/{workspaceId}`, and the Admin's `users/{uid}` profile in a transaction. Never put the service-account JSON in the repository or browser config. The Admin signs in and issues invitation links from **Brand rules > Team**; invitees must use the matching email address and verify it before joining. Admins can promote members to Reviewer.
 
+Production sign-up is invitation-only: an Auth account alone is not a workspace membership. To join, use the Admin-issued invite link, create the Auth account with the invited email, verify that email, and return through the invite link to accept it. If sign-in succeeds but workspace loading fails, check that `users/{uid}` exists with a valid `Creator`, `Reviewer`, or `Admin` role and a `workspaceId` matching existing `workspaces/{workspaceId}` and `brandRules/{workspaceId}` documents. Workspace IDs must use the `ws-…` format. Invitation acceptance also requires the Vercel `FIREBASE_SERVICE_ACCOUNT_JSON` setting.
+
 For an existing deployment with the legacy `brand/rules` singleton, back up Firestore first, then set `FIREBASE_SERVICE_ACCOUNT_JSON` and run `npm run migrate:workspace`. The migration refuses mixed-workspace data and retains the legacy source document.
 
 ### What Firebase is used for
