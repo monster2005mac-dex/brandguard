@@ -1,7 +1,5 @@
 # BrandGuard: Round 3 submission
 
-Fill the bracketed items before submitting. Everything else reflects the code in this repository.
-
 - Live project link: Not deployed or verified from this environment; configure Firebase and deploy to Vercel before submitting.
 - Source repository: https://github.com/monster2005mac-dex/brandguard
 
@@ -41,7 +39,7 @@ See "Architecture" in README.md. Static HTML/CSS/vanilla JS client with a pure s
 | "100% remote" flagged high | Fixed for descriptive uses (remote, online, organic and similar), with test; "100% results" still flagged. Some rewrites remain mechanical |
 | Verifier checks rule exists, not that it applies | Fixed by Improvement 1(b) |
 | Deep check reads only the first 6,000 characters | Limit kept; the screen now says so when a draft is longer. Exact checks cover the whole draft |
-| Output escaping / schema validation / CSP | Output escaping is applied in the reviewed UI surfaces, but has not been exhaustively audited. Comprehensive Firestore schema validation and a Content-Security-Policy remain unfinished; `vercel.json` currently sets other security headers but no CSP. |
+| Output escaping / schema validation / CSP | Output escaping is applied in the reviewed UI surfaces but has not been exhaustively audited. Comprehensive Firestore schema validation and a Content-Security-Policy remain unfinished; `vercel.json` sets other security headers but no CSP. |
 | Open sign-up, first account becomes Admin | Unchanged by design |
 | AI rate limit per serverless instance | Unchanged |
 | Firestore rules not tested in the emulator | Unchanged |
@@ -55,7 +53,7 @@ Upload limits (8 MB, supported types, empty or scanned PDF message), 20,000-char
 - `npm run check`: JavaScript syntax check of client and API
 - `node tests/e2e.js`: browser journeys against an in-memory Firebase mock
 - Manual journey to run on the deployed site: sign up (Admin) -> import guidelines -> second account (Creator) writes a draft, fixes/disputes findings, submits -> Admin/Reviewer approves -> check Insights
-- Not yet done: live Firebase emulator test of security rules [state honestly whether you ran it]
+- Not yet done: live Firebase emulator test of security rules
 
 ## 5. Product roadmap
 See "Post-event roadmap" in README.md: OCR and region selection for images, a larger independently labelled evaluation set, emulator CI for Firestore rules and staging smoke tests, logo/layout checks, multi-workspace administration.

@@ -103,6 +103,8 @@ The static HTML/CSS/vanilla-JavaScript client uses a pure shared rule engine for
 index.html login.html review.html workflow.html rules.html insights.html about.html
 assets/css/styles.css        design system (light and dark)
 assets/css/3d.css            v5 "Seal Chamber" 3D layer: tokens, hero scene, cube, photo cards, workspace polish
+assets/js/motion.js         motion helpers: button ripple, card light, entrance sequence, ring and number reveals
+assets/css/motion.css        motion layer (disabled under prefers-reduced-motion)
 assets/js/fx.js              tilt, parallax, rotating rule cube, count-up, photo loader (progressive enhancement)
 assets/img/                  optional: drop creator.jpg, reviewer.jpg, admin.jpg, cta.jpg, login.jpg to use your own photos
 assets/js/engine.js          shared deterministic rule engine, accuracy benchmark and visual checks
@@ -124,6 +126,8 @@ Powered by Google Gemini. The optional deep check sends the draft and the rule l
 - Fact checking is pattern-based and may miss unusual wording or formats. Image review checks sampled palette colors and a creator-selected contrast pair; it does not perform OCR, logo matching, or full layout review.
 - Per-user rate limit is per warm serverless instance.
 
+## Interface motion
+One staggered entrance when a workspace page first loads, then motion that responds to actions: button press and ripple, cursor-following card light, readiness ring sweep, springy toasts, drawer and modal, jump highlights, and smooth light/dark switch. All of it is switched off for visitors who prefer reduced motion.
 ## Reliability behaviour (Round 3)
 - Saving twice with no changes does not create a duplicate version; the user is told nothing changed.
 - Submit is guarded against double-clicks and against re-submitting a draft already in review.
