@@ -3,10 +3,10 @@
 Pre-publication brand governance. Check copy and creative against cited brand rules, resolve or dispute findings, and route exact versions through verified review and approval.
 
 **Pages:** `index.html` (landing), `login.html`, `review.html`, `workflow.html`, `rules.html`, `insights.html`, `about.html`.
-No build step. Plain HTML, CSS and JavaScript. Node.js 20+ and Python 3 are used by the local commands.
+No build step. Plain HTML, CSS and JavaScript. Node.js 24.x and Python 3 are used by the local commands.
 
 ## Run locally
-Requirements: Node.js 20+ and npm.
+Requirements: Node.js 24.x and npm.
 
 ```sh
 npm install
@@ -65,7 +65,7 @@ For an existing deployment with the legacy `brand/rules` singleton, back up Fire
 
 ## Deploy on Vercel (recommended: gives you the server-side Gemini key)
 
-1. Push the project to GitHub, import it in Vercel (root directory = project root, no build command).
+1. Push the project to GitHub, import it in Vercel (root directory = project root, no build command). Vercel Functions use Node.js 24.x for Firebase Admin compatibility.
 2. Add environment variables:
    - `GEMINI_API_KEY`: your Google AI Studio key (secret, server only).
    - `FIREBASE_SERVICE_ACCOUNT_JSON`: a Firebase service-account JSON value. Required by server-verified approvals, invitations, and shared AI rate limiting. Keep it in Vercel only; never commit it.
